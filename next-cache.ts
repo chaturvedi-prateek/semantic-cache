@@ -115,18 +115,26 @@ export function isNextCacheAvailable(): boolean {
  * @param fn       - The async function to memoise (e.g. a vector DB fetch).
  * @param keyParts - Stable key segments that scope the cache entry.
  * @param tags     - Cache tags used for targeted `revalidateTag` invalidation.
+ * @param revalidate - Optional `unstable_cache` revalidation window in seconds
+ *                     (or `false` to cache indefinitely). Omit to use Next.js's
+ *                     default behaviour.
  * @returns Either the `unstable_cache`-wrapped function, or `fn` untouched.
  */
 export function withNextCache<T extends (...args: any[]) => Promise<any>>(
   fn: T,
   keyParts: string[],
-  tags: string[]
+  tags: string[],
+  revalidate?: number | false
 ): T {
   const mod = loadNextCache();
 
   if (mod && typeof mod.unstable_cache === "function") {
     try {
-      return mod.unstable_cache(fn, keyParts, { tags });
+      const options: { tags: string[]; revalidate?: number | false } = { tags };
+      if (revalidate !== undefined) {
+        options.revalidate = revalidate;
+      }
+      return mod.unstable_cache(fn, keyParts, options);
     } catch {
       // If wrapping fails for any reason, fall back to the raw function.
       return fn;

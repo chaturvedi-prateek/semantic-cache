@@ -346,11 +346,17 @@ export class RedisVectorAdapter implements VectorStoreAdapter {
       ];
       const tags = buildCacheTags(this.namespace);
 
+      // Align the Next.js data-cache lifetime with the Redis TTL when one is
+      // configured, so both layers expire in lockstep. A ttl of 0 leaves the
+      // revalidation window unset (Next.js default).
+      const revalidate = this.ttlSeconds > 0 ? this.ttlSeconds : undefined;
+
       this._cachedSearch = withNextCache(
         (vector: number[], threshold: number) =>
           this.performSearch(vector, threshold),
         keyParts,
-        tags
+        tags,
+        revalidate
       );
     }
 
