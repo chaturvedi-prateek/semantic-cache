@@ -116,7 +116,7 @@ function encodeVector(vector: number[]): Uint8Array {
  * `String.fromCharCode`.
  */
 function toBinaryString(bytes: Uint8Array): string {
-  const CHUNK_SIZE = 0x8000; // 32 KiB per chunk
+  const CHUNK_SIZE = 0x8000; // 32768 bytes per chunk
   let binary = "";
   for (let i = 0; i < bytes.length; i += CHUNK_SIZE) {
     binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK_SIZE));
