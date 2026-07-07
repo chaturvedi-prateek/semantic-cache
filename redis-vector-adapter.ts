@@ -30,6 +30,12 @@
 import { Redis } from "@upstash/redis";
 import { v4 as uuidv4 } from "uuid";
 import type { VectorStoreAdapter } from "./semantic-cache-middleware";
+import {
+  buildCacheTags,
+  revalidateNextTag,
+  withNextCache,
+  SEMANTIC_CACHE_TAG,
+} from "./next-cache";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -163,6 +169,19 @@ export interface RedisVectorAdapterOptions {
    * @default 2000
    */
   connectionTimeoutMs?: number;
+
+  /**
+   * Optional logical namespace for this cache instance (e.g. a tenant slug,
+   * a feature area, or a specific user ID).
+   *
+   * When set, the namespace is woven into the Next.js cache tags produced for
+   * each lookup — `['semantic-cache', namespace]` — so that {@link
+   * RedisVectorAdapter.invalidate} can purge only the queries belonging to
+   * this namespace rather than the entire semantic cache.
+   *
+   * Has no effect when the package runs outside of Next.js.
+   */
+  namespace?: string;
 }
 
 /**
@@ -196,13 +215,31 @@ export class RedisVectorAdapter implements VectorStoreAdapter {
   private readonly timeoutMs: number;
 
   /**
+   * Logical namespace used to scope Next.js cache tags for this instance.
+   * `undefined` when the caller did not supply one.
+   */
+  private readonly namespace?: string;
+
+  /**
+   * Memoised, Next.js-cache-wrapped view of {@link performSearch}.
+   *
+   * Built lazily on first use. When Next.js is available this is the
+   * `unstable_cache`-wrapped fetch; otherwise it is `performSearch` itself,
+   * so behaviour is identical outside of Next.js.
+   */
+  private _cachedSearch?: (
+    vector: number[],
+    threshold: number
+  ) => Promise<string | null>;
+
+  /**
    * Whether the RediSearch HNSW index has been confirmed to exist this
    * process lifetime.  Avoids issuing FT.CREATE on every request.
    */
   private indexReady = false;
 
   constructor(options: RedisVectorAdapterOptions) {
-    const { client, redisUrl, redisToken, ttlSeconds = 0, connectionTimeoutMs = 2000 } = options;
+    const { client, redisUrl, redisToken, ttlSeconds = 0, connectionTimeoutMs = 2000, namespace } = options;
 
     if (client) {
       this.redis = client;
@@ -219,6 +256,7 @@ export class RedisVectorAdapter implements VectorStoreAdapter {
 
     this.ttlSeconds = ttlSeconds;
     this.timeoutMs  = connectionTimeoutMs;
+    this.namespace  = namespace;
   }
 
   // =========================================================================
@@ -273,18 +311,69 @@ export class RedisVectorAdapter implements VectorStoreAdapter {
   /**
    * Performs a KNN-1 cosine similarity search against the HNSW index.
    *
-   * Cosine *distance* (returned by Redis) = 1 − cosine *similarity*.
-   * Therefore the `threshold` parameter (expressed as similarity, e.g. 0.92)
-   * is converted: `maxDistance = 1 − threshold` (e.g. 0.08).
+   * When running inside a Next.js app, the underlying vector-database fetch is
+   * transparently wrapped in Next.js's `unstable_cache`, tagged with
+   * `['semantic-cache', namespace]`, so repeated identical lookups are served
+   * from Next.js's data cache and can be purged via {@link invalidate}.
    *
-   * If Redis is unavailable or returns an error, `null` is returned and the
-   * middleware gracefully falls through to a live LLM call.
+   * Outside of Next.js, `unstable_cache` is unavailable and this method falls
+   * straight through to the live vector-store fetch — no behavioural change.
    *
    * @param vector    - The float32 embedding of the incoming prompt.
    * @param threshold - Minimum cosine similarity score in [0, 1].
    * @returns The cached LLM response string, or `null` on a miss / error.
    */
   async search(vector: number[], threshold: number): Promise<string | null> {
+    return this.getCachedSearch()(vector, threshold);
+  }
+
+  /**
+   * Lazily builds the Next.js-cache-wrapped view of {@link performSearch}.
+   *
+   * The wrapper is scoped by `keyParts` (which include the namespace) and
+   * tagged via {@link buildCacheTags}. When Next.js is not present,
+   * {@link withNextCache} returns `performSearch` unchanged.
+   */
+  private getCachedSearch(): (
+    vector: number[],
+    threshold: number
+  ) => Promise<string | null> {
+    if (!this._cachedSearch) {
+      const keyParts = [
+        SEMANTIC_CACHE_TAG,
+        "search",
+        this.namespace ?? "default",
+      ];
+      const tags = buildCacheTags(this.namespace);
+
+      // Align the Next.js data-cache lifetime with the Redis TTL when one is
+      // configured, so both layers expire in lockstep. A ttl of 0 leaves the
+      // revalidation window unset (Next.js default).
+      const revalidate = this.ttlSeconds > 0 ? this.ttlSeconds : undefined;
+
+      this._cachedSearch = withNextCache(
+        (vector: number[], threshold: number) =>
+          this.performSearch(vector, threshold),
+        keyParts,
+        tags,
+        revalidate
+      );
+    }
+
+    return this._cachedSearch;
+  }
+
+  /**
+   * The raw vector-database fetch that backs {@link search}.
+   *
+   * Cosine *distance* (returned by Redis) = 1 − cosine *similarity*.
+   * Therefore the `threshold` parameter (expressed as similarity, e.g. 0.92)
+   * is converted: `maxDistance = 1 − threshold` (e.g. 0.08).
+   *
+   * If Redis is unavailable or returns an error, `null` is returned and the
+   * middleware gracefully falls through to a live LLM call.
+   */
+  private async performSearch(vector: number[], threshold: number): Promise<string | null> {
     try {
       await this.ensureIndex();
 
@@ -388,6 +477,35 @@ export class RedisVectorAdapter implements VectorStoreAdapter {
         err instanceof Error ? err.message : err
       );
     }
+  }
+
+  // =========================================================================
+  // Next.js native cache invalidation
+  // =========================================================================
+
+  /**
+   * Purges the Next.js native cache for semantic queries via `revalidateTag`.
+   *
+   * Because every lookup wrapped by {@link search} is tagged with
+   * `['semantic-cache', namespace]`, callers can invalidate at two levels:
+   *
+   *   • `invalidate("user_42")` — purge only the `user_42` namespace's queries.
+   *   • `invalidate()`          — purge this adapter's configured namespace, or,
+   *                               if none was configured, every semantic-cache
+   *                               entry (the base `'semantic-cache'` tag).
+   *
+   * This only affects Next.js's data cache — it does **not** delete the
+   * underlying Redis entries (use {@link flush} for that). When the package
+   * runs outside of Next.js, `revalidateTag` is unavailable and this method is
+   * a safe no-op.
+   *
+   * @param namespace - Optional namespace tag to purge. Falls back to the
+   *                    adapter's configured namespace when omitted.
+   */
+  async invalidate(namespace?: string): Promise<void> {
+    const ns = namespace ?? this.namespace;
+    const tag = ns ?? SEMANTIC_CACHE_TAG;
+    revalidateNextTag(tag);
   }
 
   // =========================================================================

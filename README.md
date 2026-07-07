@@ -100,6 +100,46 @@ console.log(text);
 | `redisToken` | `string` | — | Upstash REST token. Required if `client` is omitted. |
 | `ttlSeconds` | `number` | `0` | Auto-expire entries after N seconds. `0` = keep indefinitely. |
 | `connectionTimeoutMs` | `number` | `2000` | Timeout per Redis command before falling back to the LLM. |
+| `namespace` | `string` | — | Logical namespace (tenant, feature, or user ID) woven into the Next.js cache tags. Enables scoped invalidation via `invalidate()`. No effect outside Next.js. |
+
+---
+
+## Next.js Native Cache Integration
+
+`RedisVectorAdapter` integrates **optionally** with Next.js's native data cache. When it detects that it is running inside a Next.js app, it transparently wraps the underlying vector-database fetch performed by `search()` in [`unstable_cache`](https://nextjs.org/docs/app/api-reference/functions/unstable_cache), tagging every entry with `['semantic-cache', namespace]`.
+
+You can then purge those cached lookups with [`revalidateTag`](https://nextjs.org/docs/app/api-reference/functions/revalidateTag) via the `invalidate()` method:
+
+```ts
+const adapter = new RedisVectorAdapter({
+  redisUrl:   process.env.UPSTASH_REDIS_REST_URL!,
+  redisToken: process.env.UPSTASH_REDIS_REST_TOKEN!,
+  namespace:  "user_42", // → tags: ['semantic-cache', 'user_42']
+});
+
+// In a Server Action or Route Handler:
+await adapter.invalidate("user_42"); // purge only this namespace's queries
+await adapter.invalidate();          // purge the adapter's namespace (or all, if none)
+```
+
+### `invalidate(namespace?)`
+
+| Call | Effect |
+| --- | --- |
+| `invalidate("user_42")` | Revalidates the `user_42` tag — purges only that namespace's queries. |
+| `invalidate()` (namespace configured) | Revalidates the adapter's configured namespace tag. |
+| `invalidate()` (no namespace) | Revalidates the base `semantic-cache` tag — purges every entry. |
+
+> `invalidate()` only affects Next.js's **data cache** — it does not delete the underlying Redis entries. Use `flush()` to remove Redis keys.
+
+### Graceful fallback outside Next.js
+
+`next/cache` is treated as an **optional** module. When the package is used outside of Next.js (plain Node, tests, edge workers without the App Router, …), the module cannot be resolved and every integration point degrades safely:
+
+- `search()` falls straight through to the live vector-store fetch (no caching layer, unchanged behaviour).
+- `invalidate()` becomes a no-op.
+
+**Nothing throws, and Next.js is never a required dependency.**
 
 ---
 
