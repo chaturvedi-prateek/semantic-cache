@@ -29,6 +29,7 @@ import {
 // ---------------------------------------------------------------------------
 
 export type { VectorStoreAdapter, SemanticCacheMiddlewareOptions };
+export type { VectorMetadata, VectorQueryMatch } from "./vector-store-adapter";
 export { SemanticCacheMiddleware };
 export { RedisVectorAdapter } from "./redis-vector-adapter";
 
@@ -54,7 +55,7 @@ export interface SemanticCacheOptions {
    *
    * The package ships with {@link RedisVectorAdapter} for Upstash / Redis
    * Stack out of the box.  You can also supply your own implementation —
-   * any class that satisfies the two-method interface will work.
+   * any class that satisfies the interface will work.
    */
   adapter: VectorStoreAdapter;
 

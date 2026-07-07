@@ -16,6 +16,8 @@
     "dist/next-app-router.d.ts",
     "dist/redis-vector-adapter.js",
     "dist/redis-vector-adapter.d.ts",
+    "dist/vector-store-adapter.js",
+    "dist/vector-store-adapter.d.ts",
     "dist/next-cache.js",
     "dist/next-cache.d.ts",
     "README.md"
@@ -36,6 +38,10 @@
     "./redis-vector-adapter": {
       "types": "./dist/redis-vector-adapter.d.ts",
       "default": "./dist/redis-vector-adapter.js"
+    },
+    "./vector-store-adapter": {
+      "types": "./dist/vector-store-adapter.d.ts",
+      "default": "./dist/vector-store-adapter.js"
     }
   },
   "keywords": [],

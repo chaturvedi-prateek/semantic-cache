@@ -32,7 +32,11 @@
  */
 
 import { Redis } from "@upstash/redis";
-import type { VectorStoreAdapter } from "./semantic-cache-middleware";
+import type {
+  VectorStoreAdapter,
+  VectorMetadata,
+  VectorQueryMatch,
+} from "./vector-store-adapter";
 import {
   buildCacheTags,
   revalidateNextTag,
@@ -319,6 +323,139 @@ export class RedisVectorAdapter implements VectorStoreAdapter {
 
     // Mark as ready regardless — subsequent failures will be caught per-call.
     this.indexReady = true;
+  }
+
+  // =========================================================================
+  // VectorStoreAdapter — standard methods (upsert / query / delete)
+  // =========================================================================
+
+  /**
+   * Inserts or replaces the entry stored under `id`.
+   *
+   * The entry is written as a Redis HASH under `sc:<id>` with the vector as a
+   * binary blob and the metadata serialised to JSON, so it participates in
+   * the same HNSW index used by {@link search}.
+   *
+   * Failures are logged but never re-thrown — writes are best-effort.
+   */
+  async upsert(
+    id: string,
+    vector: number[],
+    metadata: VectorMetadata
+  ): Promise<void> {
+    try {
+      await this.ensureIndex();
+
+      const key       = `${KEY_PREFIX}${id}`;
+      const vectorBuf = encodeVector(vector);
+
+      await withTimeout(
+        rawCommand(this.redis, [
+          "HSET", key,
+          "vector",    toBinaryString(vectorBuf),
+          "metadata",  JSON.stringify(metadata ?? {}),
+          "createdAt", new Date().toISOString(),
+        ]),
+        this.timeoutMs
+      );
+
+      if (this.ttlSeconds > 0) {
+        await withTimeout(
+          rawCommand(this.redis, ["EXPIRE", key, String(this.ttlSeconds)]),
+          this.timeoutMs
+        );
+      }
+    } catch (err: unknown) {
+      console.error(
+        "[RedisVectorAdapter] upsert() failed (write skipped):",
+        err instanceof Error ? err.message : err
+      );
+    }
+  }
+
+  /**
+   * Returns the `topK` nearest entries to `vector`, ordered by descending
+   * cosine similarity. Redis reports cosine *distance*, so scores are
+   * converted via `similarity = 1 − distance`.
+   *
+   * Returns an empty array on any backend failure.
+   */
+  async query(vector: number[], topK: number): Promise<VectorQueryMatch[]> {
+    try {
+      await this.ensureIndex();
+
+      const k = Math.max(1, Math.floor(topK));
+      const queryBlob = encodeVector(vector);
+
+      const rawResult = await withTimeout(
+        rawCommand<[number, ...Array<string | string[]>]>(this.redis, [
+          "FT.SEARCH", INDEX_NAME,
+          `*=>[KNN ${k} @vector $vec AS __score]`,
+          "PARAMS", "2",
+          "vec", toBinaryString(queryBlob),
+          "RETURN", "2", "__score", "metadata",
+          "SORTBY", "__score", "ASC",
+          "LIMIT", "0", String(k),
+          "DIALECT", "2",
+        ]),
+        this.timeoutMs
+      );
+
+      // rawResult layout (RESP2): [ totalCount, key1, [field, value, ...], ... ]
+      const matches: VectorQueryMatch[] = [];
+      for (let i = 1; i + 1 < rawResult.length; i += 2) {
+        const key    = rawResult[i] as string;
+        const fields = rawResult[i + 1] as string[];
+
+        const fieldMap: Record<string, string> = {};
+        for (let j = 0; j < fields.length; j += 2) {
+          fieldMap[fields[j]] = fields[j + 1];
+        }
+
+        let metadata: VectorMetadata = {};
+        if (fieldMap["metadata"]) {
+          try {
+            metadata = JSON.parse(fieldMap["metadata"]) as VectorMetadata;
+          } catch {
+            /* malformed metadata — return the empty map */
+          }
+        }
+
+        const distance = parseFloat(fieldMap["__score"] ?? "1");
+
+        matches.push({
+          id: key.startsWith(KEY_PREFIX) ? key.slice(KEY_PREFIX.length) : key,
+          score: 1 - distance,
+          metadata,
+        });
+      }
+
+      return matches;
+    } catch (err: unknown) {
+      console.error(
+        "[RedisVectorAdapter] query() failed (returning no matches):",
+        err instanceof Error ? err.message : err
+      );
+      return [];
+    }
+  }
+
+  /**
+   * Deletes the entry stored under `id`. A no-op when the key does not exist
+   * or the backend is unreachable.
+   */
+  async delete(id: string): Promise<void> {
+    try {
+      await withTimeout(
+        rawCommand(this.redis, ["DEL", `${KEY_PREFIX}${id}`]),
+        this.timeoutMs
+      );
+    } catch (err: unknown) {
+      console.error(
+        "[RedisVectorAdapter] delete() failed (skipped):",
+        err instanceof Error ? err.message : err
+      );
+    }
   }
 
   // =========================================================================
