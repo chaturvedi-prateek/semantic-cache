@@ -1,0 +1,35 @@
+{
+  "name": "next-semantic-cache",
+  "version": "1.0.1",
+  "description": "**Cut your OpenAI / Anthropic bill. Slash latency to ~50 ms. Compute embeddings for free — locally, on every request.**",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc"
+  },
+  "files": [
+    "dist/index.js",
+    "dist/index.d.ts",
+    "dist/semantic-cache-middleware.js",
+    "dist/semantic-cache-middleware.d.ts",
+    "dist/redis-vector-adapter.js",
+    "dist/redis-vector-adapter.d.ts",
+    "README.md"
+  ],
+  "keywords": [],
+  "author": "Prateek Chaturvedi",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@ai-sdk/provider": "^4.0.2",
+    "@huggingface/transformers": "^4.2.0",
+    "@upstash/redis": "^1.38.0",
+    "ai": "^7.0.16",
+    "uuid": "^14.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.0",
+    "@types/uuid": "^10.0.0",
+    "typescript": "^6.0.3"
+  }
+}
