@@ -23,12 +23,15 @@
  *    • save()   is a no-op    → the miss is simply not cached; no crash.
  *
  * Dependencies:
- *   npm i @upstash/redis uuid
- *   npm i -D @types/node @types/uuid
+ *   npm i @upstash/redis
+ *   npm i -D @types/node
+ *
+ * Edge Runtime: this adapter uses only Web-standard APIs (Uint8Array,
+ * Web Crypto `crypto.randomUUID`) and the REST-based @upstash/redis client
+ * (which uses `fetch`), so it runs unchanged on Vercel Edge functions.
  */
 
 import { Redis } from "@upstash/redis";
-import { v4 as uuidv4 } from "uuid";
 import type { VectorStoreAdapter } from "./semantic-cache-middleware";
 
 // ---------------------------------------------------------------------------
@@ -91,20 +94,34 @@ async function rawCommand<T = unknown>(
 // ---------------------------------------------------------------------------
 
 /**
- * Encodes a JS number[] into a Buffer of raw Float32 bytes.
+ * Encodes a JS number[] into a Uint8Array of raw Float32 bytes.
  * Redis vector fields require the embedding as a binary blob.
+ *
+ * Uses the Web-standard `Uint8Array` rather than Node's `Buffer` so the
+ * adapter runs unchanged on the Next.js Edge Runtime (Vercel Edge functions),
+ * where the Node `Buffer` global is unavailable.
  */
-function encodeVector(vector: number[]): Buffer {
+function encodeVector(vector: number[]): Uint8Array {
   const float32 = new Float32Array(vector);
-  return Buffer.from(float32.buffer);
+  return new Uint8Array(float32.buffer);
 }
 
 /**
- * Decodes a Base64 string back into a Buffer containing raw Float32 bytes.
- * Used when converting the stored value back for a KNN query blob.
+ * Converts a byte array into a latin1/"binary" string — one character per
+ * byte (code points 0–255).
+ *
+ * This is the Edge-compatible equivalent of Node's `buffer.toString("binary")`.
+ * The RediSearch REST layer expects the raw vector bytes as such a string.
+ * Chunking avoids call-stack overflows from spreading very large arrays into
+ * `String.fromCharCode`.
  */
-function base64ToBuffer(b64: string): Buffer {
-  return Buffer.from(b64, "base64");
+function toBinaryString(bytes: Uint8Array): string {
+  const CHUNK_SIZE = 0x8000; // 32 KiB per chunk
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += CHUNK_SIZE) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK_SIZE));
+  }
+  return binary;
 }
 
 /**
@@ -300,7 +317,7 @@ export class RedisVectorAdapter implements VectorStoreAdapter {
           "FT.SEARCH", INDEX_NAME,
           `*=>[KNN 1 @vector $vec AS __score]`,
           "PARAMS", "2",
-          "vec", queryBlob.toString("binary"),  // binary string for the REST layer
+          "vec", toBinaryString(queryBlob),  // binary string for the REST layer
           "RETURN", "2", "__score", "response",
           "SORTBY", "__score", "ASC",
           "DIALECT", "2",
@@ -358,14 +375,14 @@ export class RedisVectorAdapter implements VectorStoreAdapter {
     try {
       await this.ensureIndex();
 
-      const key       = `${KEY_PREFIX}${uuidv4()}`;
+      const key       = `${KEY_PREFIX}${crypto.randomUUID()}`;
       const vectorBuf = encodeVector(promptVector);
 
       // Store the vector as a binary string field so RediSearch can index it.
       await withTimeout(
         rawCommand(this.redis, [
           "HSET", key,
-          "vector",    vectorBuf.toString("binary"),
+          "vector",    toBinaryString(vectorBuf),
           "response",  response,
           "createdAt", new Date().toISOString(),
         ]),

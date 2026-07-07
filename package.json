@@ -24,12 +24,10 @@
     "@ai-sdk/provider": "^4.0.2",
     "@huggingface/transformers": "^4.2.0",
     "@upstash/redis": "^1.38.0",
-    "ai": "^7.0.16",
-    "uuid": "^14.0.1"
+    "ai": "^7.0.16"
   },
   "devDependencies": {
     "@types/node": "^26.1.0",
-    "@types/uuid": "^10.0.0",
     "typescript": "^6.0.3"
   }
 }
