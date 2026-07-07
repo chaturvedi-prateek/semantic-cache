@@ -39,8 +39,7 @@ npm install next-semantic-cache ai @huggingface/transformers
 For the Redis adapter, also install:
 
 ```bash
-npm install @upstash/redis uuid
-npm install -D @types/uuid
+npm install @upstash/redis
 ```
 
 ---
