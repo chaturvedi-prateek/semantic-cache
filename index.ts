@@ -32,6 +32,15 @@ export type { VectorStoreAdapter, SemanticCacheMiddlewareOptions };
 export { SemanticCacheMiddleware };
 export { RedisVectorAdapter } from "./redis-vector-adapter";
 
+// Next.js native-cache integration helpers (safe to import outside Next.js).
+export {
+  SEMANTIC_CACHE_TAG,
+  buildCacheTags,
+  isNextCacheAvailable,
+  withNextCache,
+  revalidateNextTag,
+} from "./next-cache";
+
 // ---------------------------------------------------------------------------
 // withSemanticCache options
 // ---------------------------------------------------------------------------

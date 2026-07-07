@@ -12,10 +12,32 @@
     "dist/index.d.ts",
     "dist/semantic-cache-middleware.js",
     "dist/semantic-cache-middleware.d.ts",
+    "dist/next-app-router.js",
+    "dist/next-app-router.d.ts",
     "dist/redis-vector-adapter.js",
     "dist/redis-vector-adapter.d.ts",
+    "dist/next-cache.js",
+    "dist/next-cache.d.ts",
     "README.md"
   ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./next": {
+      "types": "./dist/next-app-router.d.ts",
+      "default": "./dist/next-app-router.js"
+    },
+    "./semantic-cache-middleware": {
+      "types": "./dist/semantic-cache-middleware.d.ts",
+      "default": "./dist/semantic-cache-middleware.js"
+    },
+    "./redis-vector-adapter": {
+      "types": "./dist/redis-vector-adapter.d.ts",
+      "default": "./dist/redis-vector-adapter.js"
+    }
+  },
   "keywords": [],
   "author": "Prateek Chaturvedi",
   "license": "ISC",
@@ -28,6 +50,15 @@
   },
   "devDependencies": {
     "@types/node": "^26.1.0",
+    "next": "^16.2.10",
     "typescript": "^6.0.3"
+  },
+  "peerDependencies": {
+    "next": ">=13.0.0"
+  },
+  "peerDependenciesMeta": {
+    "next": {
+      "optional": true
+    }
   }
 }

@@ -81,6 +81,60 @@ console.log(text);
 
 ---
 
+## App Router Route Handlers
+
+Prefer to cache at the HTTP boundary instead of at the model? Wrap a Next.js
+App Router Route Handler with `withSemanticCache` from `next-semantic-cache/next`.
+It takes a standard web `Request`, checks the semantic cache first, and returns
+a `NextResponse` — running your LLM fallback only on a miss and caching the
+result automatically.
+
+```ts
+// app/api/chat/route.ts
+import { withSemanticCache } from "next-semantic-cache/next";
+import { RedisVectorAdapter } from "next-semantic-cache/redis-vector-adapter";
+import { generateText } from "ai";
+import { openai } from "@ai-sdk/openai";
+
+const adapter = new RedisVectorAdapter({
+  redisUrl:   process.env.UPSTASH_REDIS_REST_URL!,
+  redisToken: process.env.UPSTASH_REDIS_REST_TOKEN!,
+});
+
+export const POST = withSemanticCache({
+  adapter,
+  threshold: 0.92,
+  namespace: "chat", // optional: partition this handler's cache entries
+  // Optional: customise how the prompt is read from the request.
+  extractPrompt: async (req) => (await req.json()).prompt,
+  // Runs only on a cache miss; its return value is cached and returned.
+  fallback: async (prompt) => {
+    const { text } = await generateText({ model: openai("gpt-4o"), prompt });
+    return text;
+  },
+});
+```
+
+The handler responds with JSON of the shape
+`{ response: string, cached: boolean }` — `cached` is `true` when the answer
+came from the vector store and `false` on a live LLM call.
+
+### `withSemanticCache(config)` — App Router
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `adapter` | `VectorStoreAdapter` | **required** | The persistence backend for embeddings and responses. |
+| `fallback` | `(prompt, request) => string \| Promise<string>` | **required** | LLM (or any producer) invoked on a cache miss. Its text is cached and returned. |
+| `extractPrompt` | `(request) => string \| Promise<string>` | reads `{ prompt }` or the last user message of `{ messages }` | How to extract the prompt text to embed. |
+| `namespace` | `string` | — | Logical partition; folded into the embedding so entries never collide across namespaces. |
+| `threshold` | `number` | `0.92` | Minimum cosine similarity (0–1) for a cache hit. |
+| `debug` | `boolean` | `false` | Log cache hits/misses to `console.debug`. |
+
+> Requires `next` (>= 13) as a peer dependency — already present in any App
+> Router project.
+
+---
+
 ## Configuration
 
 ### `SemanticCacheMiddleware(options)`
@@ -99,6 +153,46 @@ console.log(text);
 | `redisToken` | `string` | — | Upstash REST token. Required if `client` is omitted. |
 | `ttlSeconds` | `number` | `0` | Auto-expire entries after N seconds. `0` = keep indefinitely. |
 | `connectionTimeoutMs` | `number` | `2000` | Timeout per Redis command before falling back to the LLM. |
+| `namespace` | `string` | — | Logical namespace (tenant, feature, or user ID) woven into the Next.js cache tags. Enables scoped invalidation via `invalidate()`. No effect outside Next.js. |
+
+---
+
+## Next.js Native Cache Integration
+
+`RedisVectorAdapter` integrates **optionally** with Next.js's native data cache. When it detects that it is running inside a Next.js app, it transparently wraps the underlying vector-database fetch performed by `search()` in [`unstable_cache`](https://nextjs.org/docs/app/api-reference/functions/unstable_cache), tagging every entry with `['semantic-cache', namespace]`.
+
+You can then purge those cached lookups with [`revalidateTag`](https://nextjs.org/docs/app/api-reference/functions/revalidateTag) via the `invalidate()` method:
+
+```ts
+const adapter = new RedisVectorAdapter({
+  redisUrl:   process.env.UPSTASH_REDIS_REST_URL!,
+  redisToken: process.env.UPSTASH_REDIS_REST_TOKEN!,
+  namespace:  "user_42", // → tags: ['semantic-cache', 'user_42']
+});
+
+// In a Server Action or Route Handler:
+await adapter.invalidate("user_42"); // purge only this namespace's queries
+await adapter.invalidate();          // purge the adapter's namespace (or all, if none)
+```
+
+### `invalidate(namespace?)`
+
+| Call | Effect |
+| --- | --- |
+| `invalidate("user_42")` | Revalidates the `user_42` tag — purges only that namespace's queries. |
+| `invalidate()` (namespace configured) | Revalidates the adapter's configured namespace tag. |
+| `invalidate()` (no namespace) | Revalidates the base `semantic-cache` tag — purges every entry. |
+
+> `invalidate()` only affects Next.js's **data cache** — it does not delete the underlying Redis entries. Use `flush()` to remove Redis keys.
+
+### Graceful fallback outside Next.js
+
+`next/cache` is treated as an **optional** module. When the package is used outside of Next.js (plain Node, tests, edge workers without the App Router, …), the module cannot be resolved and every integration point degrades safely:
+
+- `search()` falls straight through to the live vector-store fetch (no caching layer, unchanged behaviour).
+- `invalidate()` becomes a no-op.
+
+**Nothing throws, and Next.js is never a required dependency.**
 
 ---
 
