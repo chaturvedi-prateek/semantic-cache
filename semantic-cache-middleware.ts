@@ -156,8 +156,12 @@ function extractPromptText(prompt: unknown): string {
 /**
  * Generates a normalised float32 embedding vector for `text`.
  * Uses mean pooling over all token embeddings (standard for MiniLM).
+ *
+ * Exported so higher-level helpers (e.g. the Next.js App Router
+ * `withSemanticCache` wrapper) can embed prompts through the exact same
+ * pipeline the middleware uses, guaranteeing cache-key compatibility.
  */
-async function generateEmbedding(text: string): Promise<number[]> {
+export async function generateEmbedding(text: string): Promise<number[]> {
   const pipe = await getEmbeddingPipeline();
 
   // `output` has shape [1, seq_len, hidden_dim] as a Tensor;
