@@ -40,7 +40,7 @@ export interface VectorQueryMatch {
   /**
    * Cosine *similarity* score in [0, 1] between the query vector and this
    * entry — higher is more similar. Adapters whose backend reports cosine
-   * *distance* must convert it (`similarity = 1 − distance`).
+   * *distance* must convert it (`similarity = 1 - distance`).
    */
   score: number;
 
