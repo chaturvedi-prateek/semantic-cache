@@ -54,30 +54,15 @@ export type LanguageModelV4Middleware = LanguageModelMiddleware;
 // 1. VectorStoreAdapter — pluggable persistence layer
 // ---------------------------------------------------------------------------
 
-/**
- * Implement this interface to connect any vector database
- * (e.g. Pinecone, Weaviate, pgvector, an in-memory store, etc.).
- */
-export interface VectorStoreAdapter {
-  /**
-   * Search for a cached response whose embedding is within `threshold`
-   * cosine distance of `vector`.
-   *
-   * @param vector    - The embedding of the current prompt (float32 array).
-   * @param threshold - Similarity threshold in [0, 1].  A value of 0.92 is a
-   *                    reasonable starting point for sentence-level deduplication.
-   * @returns The cached LLM response string, or `null` on a miss.
-   */
-  search(vector: number[], threshold: number): Promise<string | null>;
-
-  /**
-   * Persist a prompt embedding alongside the LLM response it produced.
-   *
-   * @param promptVector - The embedding that was used for the cache miss.
-   * @param response     - The raw text returned by the LLM.
-   */
-  save(promptVector: number[], response: string): Promise<void>;
-}
+// The canonical interface now lives in ./vector-store-adapter — re-exported
+// here so existing `import { VectorStoreAdapter } from "./semantic-cache-middleware"`
+// call-sites keep working unchanged.
+export type {
+  VectorStoreAdapter,
+  VectorMetadata,
+  VectorQueryMatch,
+} from "./vector-store-adapter";
+import type { VectorStoreAdapter } from "./vector-store-adapter";
 
 // ---------------------------------------------------------------------------
 // 2. Singleton embedding model
