@@ -115,11 +115,11 @@ export class UpstashVectorAdapter implements VectorStoreAdapter {
     }
 
     // Strip trailing slashes (loop avoids regex backtracking concerns).
-    let normalisedUrl = url;
-    while (normalisedUrl.endsWith("/")) {
-      normalisedUrl = normalisedUrl.slice(0, -1);
+    let normalizedUrl = url;
+    while (normalizedUrl.endsWith("/")) {
+      normalizedUrl = normalizedUrl.slice(0, -1);
     }
-    this.url = normalisedUrl;
+    this.url = normalizedUrl;
     this.token = token;
     this.namespace = namespace;
     this.timeoutMs = requestTimeoutMs;
@@ -174,7 +174,7 @@ export class UpstashVectorAdapter implements VectorStoreAdapter {
   /**
    * Converts an Upstash similarity score to raw cosine similarity in [0, 1].
    *
-   * Upstash normalises cosine scores to `(1 + cosine) / 2`, so the raw
+   * Upstash normalizes cosine scores to `(1 + cosine) / 2`, so the raw
    * cosine similarity is recovered via `2 * score − 1` and clamped to [0, 1]
    * as required by the {@link VectorStoreAdapter} contract.
    */

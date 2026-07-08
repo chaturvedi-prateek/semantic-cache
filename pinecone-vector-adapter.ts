@@ -124,7 +124,7 @@ export class PineconeVectorAdapter implements VectorStoreAdapter {
       );
     }
 
-    // Normalise the host into a base URL: strip any scheme the caller may
+    // Normalize the host into a base URL: strip any scheme the caller may
     // have included plus trailing slashes, then force https.
     let host = indexHost.replace(/^https?:\/\//, "");
     while (host.endsWith("/")) {
