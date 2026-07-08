@@ -126,7 +126,10 @@ export class PineconeVectorAdapter implements VectorStoreAdapter {
 
     // Normalise the host into a base URL: strip any scheme the caller may
     // have included plus trailing slashes, then force https.
-    const host = indexHost.replace(/^https?:\/\//, "").replace(/\/+$/, "");
+    let host = indexHost.replace(/^https?:\/\//, "");
+    while (host.endsWith("/")) {
+      host = host.slice(0, -1);
+    }
     this.baseUrl = `https://${host}`;
     this.apiKey = apiKey;
     this.namespace = namespace;

@@ -114,7 +114,12 @@ export class UpstashVectorAdapter implements VectorStoreAdapter {
       );
     }
 
-    this.url = url.replace(/\/+$/, ""); // strip trailing slashes
+    // Strip trailing slashes (loop avoids regex backtracking concerns).
+    let normalisedUrl = url;
+    while (normalisedUrl.endsWith("/")) {
+      normalisedUrl = normalisedUrl.slice(0, -1);
+    }
+    this.url = normalisedUrl;
     this.token = token;
     this.namespace = namespace;
     this.timeoutMs = requestTimeoutMs;
