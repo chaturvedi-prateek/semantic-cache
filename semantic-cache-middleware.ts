@@ -23,7 +23,21 @@ import {
 type LanguageModelV4GenerateResult = {
   rawCall: { rawPrompt: unknown; rawSettings: Record<string, unknown> };
   finishReason: string;
-  usage: { promptTokens: number; completionTokens: number };
+  usage: {
+    promptTokens?: number;
+    completionTokens?: number;
+    inputTokens?: {
+      total: number;
+      noCache?: number;
+      cacheRead?: number;
+      cacheWrite?: number;
+    };
+    outputTokens?: {
+      total: number;
+      text?: number;
+      reasoning?: number;
+    };
+  };
   text: string;
   content: Array<{ type: "text"; text: string }>;
   warnings?: unknown[];
@@ -201,6 +215,17 @@ function buildCachedGenerateResult(
     usage: {
       promptTokens: 0,
       completionTokens: 0,
+      inputTokens: {
+        total: 0,
+        noCache: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+      },
+      outputTokens: {
+        total: 0,
+        text: 0,
+        reasoning: 0,
+      },
     },
     /** The cached LLM response returned verbatim. */
     text: cachedText,

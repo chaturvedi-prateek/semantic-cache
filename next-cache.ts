@@ -134,7 +134,16 @@ export function withNextCache<T extends (...args: any[]) => Promise<any>>(
       if (revalidate !== undefined) {
         options.revalidate = revalidate;
       }
-      return mod.unstable_cache(fn, keyParts, options);
+      const cachedFn = mod.unstable_cache(fn, keyParts, options);
+      return (async (...args: any[]) => {
+        try {
+          return await cachedFn(...args);
+        } catch (err: unknown) {
+          // If execution of cachedFn fails (e.g. Invariant error under non-Next.js or test env),
+          // fall back to the raw function.
+          return await fn(...args);
+        }
+      }) as unknown as T;
     } catch {
       // If wrapping fails for any reason, fall back to the raw function.
       return fn;
