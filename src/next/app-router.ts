@@ -26,7 +26,7 @@
  * Usage (app/api/chat/route.ts):
  * ```ts
  * import { withSemanticCache } from "next-semantic-cache/next";
- * import { RedisVectorAdapter } from "next-semantic-cache/redis-vector-adapter";
+ * import { RedisVectorAdapter } from "next-semantic-cache/adapters/redis";
  * import { generateText } from "ai";
  * import { openai } from "@ai-sdk/openai";
  *

@@ -157,7 +157,7 @@ function buildMetadataFilterWhereClause(
  * @example
  * ```ts
  * import { Pool } from "pg";
- * import { PgVectorAdapter } from "next-semantic-cache/pgvector-adapter";
+ * import { PgVectorAdapter } from "next-semantic-cache/adapters/pgvector";
  *
  * const pool = new Pool({ connectionString: process.env.DATABASE_URL });
  * const adapter = new PgVectorAdapter({ pool });

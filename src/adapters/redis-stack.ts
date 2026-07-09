@@ -180,7 +180,7 @@ function encodeVector(vector: number[]): Uint8Array {
  * @example
  * ```ts
  * import { createClient } from "redis";
- * import { RedisStackVectorAdapter } from "next-semantic-cache/redis-stack-adapter";
+ * import { RedisStackVectorAdapter } from "next-semantic-cache/adapters/redis-stack";
  *
  * const client = createClient({ url: process.env.REDIS_URL });
  * await client.connect();

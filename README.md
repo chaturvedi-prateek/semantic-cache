@@ -52,7 +52,7 @@ npm install @upstash/redis
 import { openai } from "@ai-sdk/openai";
 import { wrapLanguageModel, generateText } from "ai";
 import { SemanticCacheMiddleware } from "next-semantic-cache";
-import { RedisVectorAdapter } from "next-semantic-cache/redis-vector-adapter";
+import { RedisVectorAdapter } from "next-semantic-cache/adapters/redis";
 
 // 1. Create a vector store adapter.
 const vectorStore = new RedisVectorAdapter({
@@ -96,7 +96,7 @@ result automatically.
 ```ts
 // app/api/chat/route.ts
 import { withSemanticCache } from "next-semantic-cache/next";
-import { RedisVectorAdapter } from "next-semantic-cache/redis-vector-adapter";
+import { RedisVectorAdapter } from "next-semantic-cache/adapters/redis";
 import { generateText } from "ai";
 import { openai } from "@ai-sdk/openai";
 
