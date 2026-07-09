@@ -40,6 +40,7 @@ import type {
   VectorMetadata,
   VectorQueryMatch,
 } from "./vector-store-adapter";
+import { getAllowedMetadataFilterEntries } from "./metadata-filter";
 
 // ---------------------------------------------------------------------------
 // Options
@@ -94,10 +95,7 @@ function toPineconeMetadataFilter(
 ): Record<string, { $eq: string }> | undefined {
   if (!filter) return undefined;
 
-  const entries = Object.entries(filter).filter(
-    (entry): entry is [string, string] => typeof entry[1] === "string"
-  );
-
+  const entries = getAllowedMetadataFilterEntries(filter);
   if (entries.length === 0) return undefined;
 
   return Object.fromEntries(
@@ -223,13 +221,12 @@ export class PineconeVectorAdapter implements VectorStoreAdapter {
     topK: number,
     filter?: VectorMetadataFilter
   ): Promise<VectorQueryMatch[]> {
+    const metadataFilter = toPineconeMetadataFilter(filter);
     const data = await this.request<PineconeQueryResponse>("/query", {
       vector,
       topK: Math.max(1, Math.floor(topK)),
       includeMetadata: true,
-      ...(toPineconeMetadataFilter(filter)
-        ? { filter: toPineconeMetadataFilter(filter) }
-        : {}),
+      ...(metadataFilter ? { filter: metadataFilter } : {}),
       ...(this.namespace ? { namespace: this.namespace } : {}),
     });
 

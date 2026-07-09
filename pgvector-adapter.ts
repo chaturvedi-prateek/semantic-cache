@@ -55,6 +55,7 @@ import type {
   VectorMetadata,
   VectorQueryMatch,
 } from "./vector-store-adapter";
+import { getAllowedMetadataFilterEntries } from "./metadata-filter";
 
 // ---------------------------------------------------------------------------
 // PgPoolLike — minimal interface compatible with pg.Pool / pg.Client and
@@ -110,8 +111,6 @@ export interface PgVectorAdapterOptions {
 
 /** Metadata key under which `save()` stores the cached LLM response. */
 const RESPONSE_METADATA_KEY = "response" as const;
-const FILTER_METADATA_KEYS = ["userId", "tenantId"] as const;
-
 function buildMetadataFilterWhereClause(
   filter: VectorMetadataFilter | undefined,
   startingParameterIndex: number
@@ -120,9 +119,7 @@ function buildMetadataFilterWhereClause(
     return { clause: "", values: [] };
   }
 
-  const entries = FILTER_METADATA_KEYS.flatMap((key) =>
-    typeof filter[key] === "string" ? [[key, filter[key]]] : []
-  );
+  const entries = getAllowedMetadataFilterEntries(filter);
 
   if (entries.length === 0) {
     return { clause: "", values: [] };

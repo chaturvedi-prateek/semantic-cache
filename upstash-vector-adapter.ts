@@ -35,6 +35,7 @@ import type {
   VectorMetadata,
   VectorQueryMatch,
 } from "./vector-store-adapter";
+import { getAllowedMetadataFilterEntries } from "./metadata-filter";
 
 // ---------------------------------------------------------------------------
 // Options
@@ -93,8 +94,7 @@ function toUpstashMetadataFilter(
 ): string | undefined {
   if (!filter) return undefined;
 
-  const clauses = Object.entries(filter)
-    .filter((entry): entry is [string, string] => typeof entry[1] === "string")
+  const clauses = getAllowedMetadataFilterEntries(filter)
     .map(([key, value]) => `${key} = '${escapeUpstashFilterValue(value)}'`);
 
   return clauses.length > 0 ? clauses.join(" AND ") : undefined;

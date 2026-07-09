@@ -466,8 +466,8 @@ export function SemanticCacheMiddleware(
           log(`Saved embedding — "${promptText.slice(0, 72)}…"`);
         })
         .catch((err: unknown) => {
-          log(
-            "Failed to persist to vector store:",
+          console.error(
+            "[SemanticCache] Failed to persist to vector store:",
             err instanceof Error ? err.message : err
           );
         })

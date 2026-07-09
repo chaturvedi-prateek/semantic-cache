@@ -1,4 +1,5 @@
 import type { VectorMetadataFilter } from "./vector-store-adapter";
+import { getAllowedMetadataFilterEntries } from "./metadata-filter";
 
 export function escapeRedisTagValue(value: string): string {
   let escaped = "";
@@ -13,8 +14,7 @@ export function buildRedisFilterPrefix(
 ): string {
   if (!filter) return "*";
 
-  const clauses = Object.entries(filter)
-    .filter((entry): entry is [string, string] => typeof entry[1] === "string")
+  const clauses = getAllowedMetadataFilterEntries(filter)
     .map(([key, value]) => `@${key}:{${escapeRedisTagValue(value)}}`);
 
   return clauses.length > 0 ? clauses.join(" ") : "*";
