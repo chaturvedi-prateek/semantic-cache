@@ -24,6 +24,8 @@
     "dist/pgvector-adapter.d.ts",
     "dist/redis-stack-adapter.js",
     "dist/redis-stack-adapter.d.ts",
+    "dist/memory-vector-adapter.js",
+    "dist/memory-vector-adapter.d.ts",
     "dist/vector-store-adapter.js",
     "dist/vector-store-adapter.d.ts",
     "dist/next-cache.js",
@@ -62,6 +64,10 @@
     "./redis-stack-adapter": {
       "types": "./dist/redis-stack-adapter.d.ts",
       "default": "./dist/redis-stack-adapter.js"
+    },
+    "./memory-vector-adapter": {
+      "types": "./dist/memory-vector-adapter.d.ts",
+      "default": "./dist/memory-vector-adapter.js"
     },
     "./vector-store-adapter": {
       "types": "./dist/vector-store-adapter.d.ts",

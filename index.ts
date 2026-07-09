@@ -39,6 +39,7 @@ export type { PineconeVectorAdapterOptions } from "./pinecone-vector-adapter";
 export { PgVectorAdapter } from "./pgvector-adapter";
 export type { PgVectorAdapterOptions, PgPoolLike } from "./pgvector-adapter";
 export { RedisStackVectorAdapter } from "./redis-stack-adapter";
+export { MemoryVectorAdapter } from "./memory-vector-adapter";
 export type {
   RedisStackVectorAdapterOptions,
   RedisClientLike,
