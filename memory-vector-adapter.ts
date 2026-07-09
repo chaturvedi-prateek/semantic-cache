@@ -40,7 +40,6 @@ export class MemoryVectorAdapter implements VectorStoreAdapter {
   }
 
   async query(vector: number[], topK: number): Promise<VectorQueryMatch[]> {
-    if (topK <= 0) return [];
     return this.searchMatches(vector, topK, 0);
   }
 
@@ -69,7 +68,8 @@ export class MemoryVectorAdapter implements VectorStoreAdapter {
     minThreshold: number
   ): Promise<VectorQueryMatch[]> {
     const threshold = Math.min(1, Math.max(0, minThreshold));
-    const limit = Math.max(1, Math.floor(topK));
+    const limit = Math.max(0, Math.floor(topK));
+    if (limit === 0) return [];
 
     const matches = [...this.entries.entries()]
       .map(([id, entry]) => ({

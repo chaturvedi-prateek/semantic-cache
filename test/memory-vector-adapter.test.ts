@@ -63,8 +63,8 @@ describe("MemoryVectorAdapter", () => {
     const zero = zeroMatches.find((m) => m.id === "zero");
     expect(zero?.score).toBe(0);
 
-    const mismatched = await adapter.query([1, 0], 10);
-    const dim = mismatched.find((m) => m.id === "dim");
+    const mismatchedMatches = await adapter.query([1, 0], 10);
+    const dim = mismatchedMatches.find((m) => m.id === "dim");
     expect(dim?.score).toBe(0);
   });
 });
