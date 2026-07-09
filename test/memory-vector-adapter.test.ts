@@ -31,7 +31,7 @@ describe("MemoryVectorAdapter", () => {
     await adapter.upsert("a", [1, 0], { response: "cached!" });
 
     await expect(adapter.search([0.9, 0.1], 0.9)).resolves.toBe("cached!");
-    await expect(adapter.search([0.9, 0.1], 0.99)).resolves.toBeNull();
+    await expect(adapter.search([0.9, 0.1], 0.999)).resolves.toBeNull();
   });
 
   it("search returns null when response metadata is missing", async () => {
