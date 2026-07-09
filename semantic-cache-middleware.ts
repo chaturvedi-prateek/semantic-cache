@@ -261,6 +261,63 @@ function buildCachedGenerateResult(
   } as LanguageModelV4GenerateResult;
 }
 
+/**
+ * Builds a synthetic LanguageModelV4 stream result that emits a single
+ * text part containing `cachedText`.
+ */
+function buildCachedStreamResult(cachedText: string) {
+  const textPartId = "0";
+  return {
+    stream: new ReadableStream({
+      start(controller) {
+        controller.enqueue({
+          type: "stream-start",
+          warnings: [],
+        });
+        controller.enqueue({
+          type: "text-start",
+          id: textPartId,
+        });
+        controller.enqueue({
+          type: "text-delta",
+          id: textPartId,
+          delta: cachedText,
+        });
+        controller.enqueue({
+          type: "text-end",
+          id: textPartId,
+        });
+        controller.enqueue({
+          type: "finish",
+          finishReason: "stop",
+          usage: {
+            promptTokens: 0,
+            completionTokens: 0,
+            inputTokens: {
+              total: 0,
+              noCache: 0,
+              cacheRead: 0,
+              cacheWrite: 0,
+            },
+            outputTokens: {
+              total: 0,
+              text: 0,
+              reasoning: 0,
+            },
+          },
+          providerMetadata: {
+            semanticCache: {
+              hit: true,
+              model: EMBEDDING_MODEL,
+            },
+          },
+        });
+        controller.close();
+      },
+    }),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // 6. Middleware options
 // ---------------------------------------------------------------------------
@@ -473,5 +530,87 @@ export function SemanticCacheMiddleware(
     return result;
   };
 
-  return { transformParams, wrapGenerate };
+  // =========================================================================
+  // wrapStream
+  //
+  // Wraps model.doStream.
+  //   • Cache HIT  → returns a synthetic stream; doStream is NEVER called.
+  //   • Cache MISS → calls doStream, buffers text-delta chunks, and persists
+  //                  the full response asynchronously on stream finish.
+  // =========================================================================
+  const wrapStream: LanguageModelV4Middleware["wrapStream"] = async ({
+    doStream,
+    params,
+  }) => {
+    // ── Cache HIT path ────────────────────────────────────────────────
+    const cacheHitValue = ((params as any).providerMetadata ?? {})[
+      CACHE_HIT_SENTINEL
+    ];
+
+    if (typeof cacheHitValue === "string") {
+      log("Short-circuiting stream call — serving cached response.");
+      return buildCachedStreamResult(cacheHitValue) as any;
+    }
+
+    // ── Cache MISS path ───────────────────────────────────────────────
+    const streamResult = await doStream();
+    const promptText = extractPromptText(params.prompt);
+    const promptVector = ((params as any).providerMetadata ?? {})[
+      PROMPT_VECTOR_SENTINEL
+    ] as number[] | undefined;
+
+    let bufferedText = "";
+    let saveScheduled = false;
+
+    const scheduleSave = () => {
+      if (saveScheduled || !promptVector || !bufferedText) {
+        return;
+      }
+      saveScheduled = true;
+
+      vectorStore
+        .save(promptVector, bufferedText, buildCacheMetadata())
+        .then(() => {
+          log(`Saved stream embedding — "${promptText.slice(0, 72)}…"`);
+        })
+        .catch((err: unknown) => {
+          console.error(
+            "[SemanticCache] Failed to persist streamed response to vector store:",
+            err instanceof Error ? err.message : err
+          );
+        });
+    };
+
+    return {
+      ...streamResult,
+      stream: streamResult.stream.pipeThrough(
+        new TransformStream({
+          transform(chunk, controller) {
+            if (
+              chunk &&
+              typeof chunk === "object" &&
+              "type" in chunk &&
+              (chunk as any).type === "text-delta" &&
+              typeof (chunk as any).delta === "string"
+            ) {
+              bufferedText += (chunk as any).delta;
+            }
+
+            if (
+              chunk &&
+              typeof chunk === "object" &&
+              "type" in chunk &&
+              (chunk as any).type === "finish"
+            ) {
+              scheduleSave();
+            }
+
+            controller.enqueue(chunk);
+          },
+        })
+      ),
+    } as any;
+  };
+
+  return { transformParams, wrapGenerate, wrapStream };
 }
