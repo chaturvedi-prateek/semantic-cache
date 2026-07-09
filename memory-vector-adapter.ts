@@ -6,6 +6,7 @@
  */
 
 import type {
+  VectorMetadataFilter,
   VectorMetadata,
   VectorQueryMatch,
   VectorStoreAdapter,
@@ -13,6 +14,17 @@ import type {
 
 /** Metadata key under which `save()` stores the cached LLM response. */
 const RESPONSE_METADATA_KEY = "response" as const;
+
+function matchesMetadataFilter(
+  metadata: VectorMetadata,
+  filter?: VectorMetadataFilter
+): boolean {
+  if (!filter) return true;
+
+  return Object.entries(filter).every(
+    ([key, value]) => value === undefined || metadata[key] === value
+  );
+}
 
 interface MemoryVectorEntry {
   vector: number[];
@@ -39,24 +51,37 @@ export class MemoryVectorAdapter implements VectorStoreAdapter {
     });
   }
 
-  async query(vector: number[], topK: number): Promise<VectorQueryMatch[]> {
-    return this.searchMatches(vector, topK, 0);
+  async query(
+    vector: number[],
+    topK: number,
+    filter?: VectorMetadataFilter
+  ): Promise<VectorQueryMatch[]> {
+    return this.searchMatches(vector, topK, 0, filter);
   }
 
   async delete(id: string): Promise<void> {
     this.entries.delete(id);
   }
 
-  async search(vector: number[], threshold: number): Promise<string | null> {
-    const [best] = await this.searchMatches(vector, 1, threshold);
+  async search(
+    vector: number[],
+    threshold: number,
+    filter?: VectorMetadataFilter
+  ): Promise<string | null> {
+    const [best] = await this.searchMatches(vector, 1, threshold, filter);
     if (!best) return null;
 
     const response = best.metadata[RESPONSE_METADATA_KEY];
     return typeof response === "string" ? response : null;
   }
 
-  async save(promptVector: number[], response: string): Promise<void> {
+  async save(
+    promptVector: number[],
+    response: string,
+    metadata: VectorMetadata = {}
+  ): Promise<void> {
     await this.upsert(crypto.randomUUID(), promptVector, {
+      ...metadata,
       [RESPONSE_METADATA_KEY]: response,
       createdAt: new Date().toISOString(),
     });
@@ -65,7 +90,8 @@ export class MemoryVectorAdapter implements VectorStoreAdapter {
   private async searchMatches(
     vector: number[],
     topK: number,
-    minThreshold: number
+    minThreshold: number,
+    filter?: VectorMetadataFilter
   ): Promise<VectorQueryMatch[]> {
     const threshold = Math.min(1, Math.max(0, minThreshold));
     const limit = Math.max(0, Math.floor(topK));
@@ -77,6 +103,7 @@ export class MemoryVectorAdapter implements VectorStoreAdapter {
         score: this.cosineSimilarity(vector, entry.vector),
         metadata: entry.metadata,
       }))
+      .filter((match) => matchesMetadataFilter(match.metadata, filter))
       .filter((match) => match.score >= threshold)
       .sort((a, b) => b.score - a.score)
       .slice(0, limit);

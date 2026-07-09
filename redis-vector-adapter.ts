@@ -34,9 +34,11 @@
 import { Redis } from "@upstash/redis";
 import type {
   VectorStoreAdapter,
+  VectorMetadataFilter,
   VectorMetadata,
   VectorQueryMatch,
 } from "./vector-store-adapter";
+import { buildRedisFilterPrefix } from "./redis-metadata-filter";
 import {
   buildCacheTags,
   revalidateNextTag,
@@ -65,6 +67,9 @@ const VECTOR_DIM = 384 as const;
  * Higher = more accurate recall, higher latency.  32 is a safe default.
  */
 const HNSW_EF_RUNTIME = 32 as const;
+const RESPONSE_METADATA_KEY = "response" as const;
+const USER_ID_METADATA_KEY = "userId" as const;
+const TENANT_ID_METADATA_KEY = "tenantId" as const;
 
 // ---------------------------------------------------------------------------
 // Helpers — raw command dispatch
@@ -250,7 +255,8 @@ export class RedisVectorAdapter implements VectorStoreAdapter {
    */
   private _cachedSearch?: (
     vector: number[],
-    threshold: number
+    threshold: number,
+    filter?: VectorMetadataFilter
   ) => Promise<string | null>;
 
   /**
@@ -302,6 +308,8 @@ export class RedisVectorAdapter implements VectorStoreAdapter {
           // ── Full-text field (for human inspection / future hybrid search) ──
           "response",  "TEXT",
           "createdAt", "TEXT",
+          USER_ID_METADATA_KEY, "TAG",
+          TENANT_ID_METADATA_KEY, "TAG",
           // ── Vector field — HNSW with Cosine distance ──────────────────────
           "vector", "VECTOR", "HNSW",
           "6",                         // number of attribute/value pairs below
@@ -355,6 +363,12 @@ export class RedisVectorAdapter implements VectorStoreAdapter {
           "vector",    toBinaryString(vectorBuf),
           "metadata",  JSON.stringify(metadata ?? {}),
           "createdAt", new Date().toISOString(),
+          ...(typeof metadata?.[USER_ID_METADATA_KEY] === "string"
+           ? [USER_ID_METADATA_KEY, metadata[USER_ID_METADATA_KEY] as string]
+           : []),
+          ...(typeof metadata?.[TENANT_ID_METADATA_KEY] === "string"
+           ? [TENANT_ID_METADATA_KEY, metadata[TENANT_ID_METADATA_KEY] as string]
+           : []),
         ]),
         this.timeoutMs
       );
@@ -380,17 +394,22 @@ export class RedisVectorAdapter implements VectorStoreAdapter {
    *
    * Returns an empty array on any backend failure.
    */
-  async query(vector: number[], topK: number): Promise<VectorQueryMatch[]> {
+  async query(
+    vector: number[],
+    topK: number,
+    filter?: VectorMetadataFilter
+  ): Promise<VectorQueryMatch[]> {
     try {
       await this.ensureIndex();
 
       const k = Math.max(1, Math.floor(topK));
       const queryBlob = encodeVector(vector);
+      const filterPrefix = buildRedisFilterPrefix(filter);
 
       const rawResult = await withTimeout(
         rawCommand<[number, ...Array<string | string[]>]>(this.redis, [
           "FT.SEARCH", INDEX_NAME,
-          `*=>[KNN ${k} @vector $vec AS __score]`,
+          `${filterPrefix}=>[KNN ${k} @vector $vec AS __score]`,
           "PARAMS", "2",
           "vec", toBinaryString(queryBlob),
           "RETURN", "2", "__score", "metadata",
@@ -477,8 +496,12 @@ export class RedisVectorAdapter implements VectorStoreAdapter {
    * @param threshold - Minimum cosine similarity score in [0, 1].
    * @returns The cached LLM response string, or `null` on a miss / error.
    */
-  async search(vector: number[], threshold: number): Promise<string | null> {
-    return this.getCachedSearch()(vector, threshold);
+  async search(
+    vector: number[],
+    threshold: number,
+    filter?: VectorMetadataFilter
+  ): Promise<string | null> {
+    return this.getCachedSearch()(vector, threshold, filter);
   }
 
   /**
@@ -490,7 +513,8 @@ export class RedisVectorAdapter implements VectorStoreAdapter {
    */
   private getCachedSearch(): (
     vector: number[],
-    threshold: number
+    threshold: number,
+    filter?: VectorMetadataFilter
   ) => Promise<string | null> {
     if (!this._cachedSearch) {
       const keyParts = [
@@ -506,8 +530,11 @@ export class RedisVectorAdapter implements VectorStoreAdapter {
       const revalidate = this.ttlSeconds > 0 ? this.ttlSeconds : undefined;
 
       this._cachedSearch = withNextCache(
-        (vector: number[], threshold: number) =>
-          this.performSearch(vector, threshold),
+        (
+          vector: number[],
+          threshold: number,
+          filter?: VectorMetadataFilter
+        ) => this.performSearch(vector, threshold, filter),
         keyParts,
         tags,
         revalidate
@@ -527,7 +554,11 @@ export class RedisVectorAdapter implements VectorStoreAdapter {
    * If Redis is unavailable or returns an error, `null` is returned and the
    * middleware gracefully falls through to a live LLM call.
    */
-  private async performSearch(vector: number[], threshold: number): Promise<string | null> {
+  private async performSearch(
+    vector: number[],
+    threshold: number,
+    filter?: VectorMetadataFilter
+  ): Promise<string | null> {
     try {
       await this.ensureIndex();
 
@@ -536,12 +567,13 @@ export class RedisVectorAdapter implements VectorStoreAdapter {
 
       // Encode the query vector as a binary buffer for the KNN parameter.
       const queryBlob = encodeVector(vector);
+      const filterPrefix = buildRedisFilterPrefix(filter);
 
       // ── FT.SEARCH KNN query ──────────────────────────────────────────────
       const rawResult = await withTimeout(
         rawCommand<[number, ...Array<string | string[]>]>(this.redis, [
           "FT.SEARCH", INDEX_NAME,
-          `*=>[KNN 1 @vector $vec AS __score]`,
+          `${filterPrefix}=>[KNN 1 @vector $vec AS __score]`,
           "PARAMS", "2",
           "vec", toBinaryString(queryBlob),  // binary string for the REST layer
           "RETURN", "2", "__score", "response",
@@ -597,20 +629,36 @@ export class RedisVectorAdapter implements VectorStoreAdapter {
    * @param promptVector - The float32 embedding of the prompt.
    * @param response     - The LLM-generated text to cache.
    */
-  async save(promptVector: number[], response: string): Promise<void> {
+  async save(
+    promptVector: number[],
+    response: string,
+    metadata: VectorMetadata = {}
+  ): Promise<void> {
     try {
       await this.ensureIndex();
 
       const key       = `${KEY_PREFIX}${crypto.randomUUID()}`;
       const vectorBuf = encodeVector(promptVector);
+      const entryMetadata: VectorMetadata & { createdAt: string } = {
+        ...metadata,
+        [RESPONSE_METADATA_KEY]: response,
+        createdAt: new Date().toISOString(),
+      };
 
       // Store the vector as a binary string field so RediSearch can index it.
       await withTimeout(
         rawCommand(this.redis, [
           "HSET", key,
           "vector",    toBinaryString(vectorBuf),
+          "metadata",  JSON.stringify(entryMetadata),
           "response",  response,
-          "createdAt", new Date().toISOString(),
+          "createdAt", entryMetadata.createdAt,
+          ...(typeof entryMetadata[USER_ID_METADATA_KEY] === "string"
+            ? [USER_ID_METADATA_KEY, entryMetadata[USER_ID_METADATA_KEY] as string]
+            : []),
+          ...(typeof entryMetadata[TENANT_ID_METADATA_KEY] === "string"
+            ? [TENANT_ID_METADATA_KEY, entryMetadata[TENANT_ID_METADATA_KEY] as string]
+            : []),
         ]),
         this.timeoutMs
       );

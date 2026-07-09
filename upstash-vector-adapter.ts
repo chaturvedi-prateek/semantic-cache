@@ -30,10 +30,12 @@
  */
 
 import type {
+  VectorMetadataFilter,
   VectorStoreAdapter,
   VectorMetadata,
   VectorQueryMatch,
 } from "./vector-store-adapter";
+import { getAllowedMetadataFilterEntries } from "./metadata-filter";
 
 // ---------------------------------------------------------------------------
 // Options
@@ -82,6 +84,21 @@ interface UpstashQueryResponse {
 
 /** Metadata key under which `save()` stores the cached LLM response. */
 const RESPONSE_METADATA_KEY = "response" as const;
+
+function escapeUpstashFilterValue(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+}
+
+function toUpstashMetadataFilter(
+  filter?: VectorMetadataFilter
+): string | undefined {
+  if (!filter) return undefined;
+
+  const clauses = getAllowedMetadataFilterEntries(filter)
+    .map(([key, value]) => `${key} = '${escapeUpstashFilterValue(value)}'`);
+
+  return clauses.length > 0 ? clauses.join(" AND ") : undefined;
+}
 
 // ---------------------------------------------------------------------------
 // UpstashVectorAdapter
@@ -203,11 +220,17 @@ export class UpstashVectorAdapter implements VectorStoreAdapter {
    * Returns the `topK` nearest entries to `vector`, ordered by descending
    * cosine similarity.
    */
-  async query(vector: number[], topK: number): Promise<VectorQueryMatch[]> {
+  async query(
+    vector: number[],
+    topK: number,
+    filter?: VectorMetadataFilter
+  ): Promise<VectorQueryMatch[]> {
+    const metadataFilter = toUpstashMetadataFilter(filter);
     const data = await this.request<UpstashQueryResponse>("/query", {
       vector,
       topK: Math.max(1, Math.floor(topK)),
       includeMetadata: true,
+      ...(metadataFilter !== undefined ? { filter: metadataFilter } : {}),
     });
 
     return (data.result ?? []).map((match) => ({
@@ -231,9 +254,13 @@ export class UpstashVectorAdapter implements VectorStoreAdapter {
    * cosine similarity of `vector`. Returns `null` on a miss or any backend
    * failure so the middleware falls back to the live LLM call.
    */
-  async search(vector: number[], threshold: number): Promise<string | null> {
+  async search(
+    vector: number[],
+    threshold: number,
+    filter?: VectorMetadataFilter
+  ): Promise<string | null> {
     try {
-      const [best] = await this.query(vector, 1);
+      const [best] = await this.query(vector, 1, filter);
       if (!best || best.score < threshold) return null;
 
       const response = best.metadata[RESPONSE_METADATA_KEY];
@@ -251,9 +278,14 @@ export class UpstashVectorAdapter implements VectorStoreAdapter {
    * Persists a prompt embedding alongside the LLM response it produced.
    * Failures are logged but never re-thrown — caching is best-effort.
    */
-  async save(promptVector: number[], response: string): Promise<void> {
+  async save(
+    promptVector: number[],
+    response: string,
+    metadata: VectorMetadata = {}
+  ): Promise<void> {
     try {
       await this.upsert(crypto.randomUUID(), promptVector, {
+        ...metadata,
         [RESPONSE_METADATA_KEY]: response,
         createdAt: new Date().toISOString(),
       });

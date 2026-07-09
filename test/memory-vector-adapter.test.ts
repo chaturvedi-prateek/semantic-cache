@@ -44,13 +44,37 @@ describe("MemoryVectorAdapter", () => {
   it("save stores response and delete removes entries", async () => {
     const adapter = new MemoryVectorAdapter();
 
-    await adapter.save([1, 0], "from-save");
-    await expect(adapter.search([1, 0], 0.99)).resolves.toBe("from-save");
+    await adapter.save([1, 0], "from-save", { userId: "user-1", tenantId: "tenant-1" });
+    await expect(
+      adapter.search([1, 0], 0.99, { userId: "user-1", tenantId: "tenant-1" })
+    ).resolves.toBe("from-save");
+    await expect(
+      adapter.search([1, 0], 0.99, { userId: "user-2", tenantId: "tenant-1" })
+    ).resolves.toBeNull();
 
     await adapter.upsert("delete-me", [1, 0], { response: "gone" });
     await adapter.delete("delete-me");
     const matches = await adapter.query([1, 0], 10);
     expect(matches.find((m) => m.id === "delete-me")).toBeUndefined();
+  });
+
+  it("applies metadata filters to query results", async () => {
+    const adapter = new MemoryVectorAdapter();
+
+    await adapter.upsert("tenant-a", [1, 0], {
+      response: "A",
+      userId: "user-1",
+      tenantId: "tenant-a",
+    });
+    await adapter.upsert("tenant-b", [1, 0], {
+      response: "B",
+      userId: "user-1",
+      tenantId: "tenant-b",
+    });
+
+    const matches = await adapter.query([1, 0], 10, { tenantId: "tenant-a" });
+    expect(matches).toHaveLength(1);
+    expect(matches[0].id).toBe("tenant-a");
   });
 
   it("returns score 0 for zero vectors or mismatched dimensions", async () => {

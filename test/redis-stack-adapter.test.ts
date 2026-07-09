@@ -112,6 +112,20 @@ describe("RedisStackVectorAdapter", () => {
     expect(args[respIdx + 1]).toBe("cached!");
   });
 
+  it("stores user and tenant metadata as indexed tag fields", async () => {
+    sendCommand.mockResolvedValue("OK");
+
+    await makeAdapter().upsert("id-1", [0.1, 0.2], {
+      response: "cached!",
+      userId: "user-1",
+      tenantId: "tenant-1",
+    });
+
+    const args: (string | Buffer)[] = sendCommand.mock.calls[0][0];
+    expect(args).toContain("userId");
+    expect(args).toContain("tenantId");
+  });
+
   it("issues an EXPIRE command when ttlSeconds > 0", async () => {
     sendCommand.mockResolvedValue("OK");
 
@@ -196,6 +210,19 @@ describe("RedisStackVectorAdapter", () => {
 
     const searchArgs: string[] = sendCommand.mock.calls[1][0];
     expect(searchArgs[2]).toContain("KNN 1");
+  });
+
+  it("applies metadata filters to FT.SEARCH queries", async () => {
+    sendCommand.mockResolvedValueOnce("OK").mockResolvedValueOnce([0]);
+
+    await makeAdapter().query([0.1], 1, {
+      userId: "user-1",
+      tenantId: "tenant-1",
+    });
+
+    const searchArgs: string[] = sendCommand.mock.calls[1][0];
+    expect(searchArgs[2]).toContain("@userId:{user-1}");
+    expect(searchArgs[2]).toContain("@tenantId:{tenant-1}");
   });
 
   it("strips the 'sc:' key prefix from returned ids", async () => {
@@ -290,7 +317,10 @@ describe("RedisStackVectorAdapter", () => {
   it("save creates the index and stores the response under the metadata 'response' key", async () => {
     sendCommand.mockResolvedValue("OK");
 
-    await makeAdapter().save([0.1, 0.2], "the answer");
+    await makeAdapter().save([0.1, 0.2], "the answer", {
+      userId: "user-1",
+      tenantId: "tenant-1",
+    });
 
     // First call is FT.CREATE, second is HSET
     const createArgs: string[] = sendCommand.mock.calls[0][0];
@@ -302,6 +332,8 @@ describe("RedisStackVectorAdapter", () => {
     const meta = JSON.parse(hsetArgs[metaIdx + 1] as string);
     expect(meta.response).toBe("the answer");
     expect(typeof meta.createdAt).toBe("string");
+    expect(meta.userId).toBe("user-1");
+    expect(meta.tenantId).toBe("tenant-1");
   });
 
   it("save never throws even when the client rejects", async () => {

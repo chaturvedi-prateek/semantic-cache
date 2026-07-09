@@ -35,10 +35,12 @@
  */
 
 import type {
+  VectorMetadataFilter,
   VectorStoreAdapter,
   VectorMetadata,
   VectorQueryMatch,
 } from "./vector-store-adapter";
+import { getAllowedMetadataFilterEntries } from "./metadata-filter";
 
 // ---------------------------------------------------------------------------
 // Options
@@ -87,6 +89,19 @@ interface PineconeQueryResponse {
 
 /** Metadata key under which `save()` stores the cached LLM response. */
 const RESPONSE_METADATA_KEY = "response" as const;
+
+function toPineconeMetadataFilter(
+  filter?: VectorMetadataFilter
+): Record<string, { $eq: string }> | undefined {
+  if (!filter) return undefined;
+
+  const entries = getAllowedMetadataFilterEntries(filter);
+  if (entries.length === 0) return undefined;
+
+  return Object.fromEntries(
+    entries.map(([key, value]) => [key, { $eq: value }])
+  );
+}
 
 // ---------------------------------------------------------------------------
 // PineconeVectorAdapter
@@ -201,11 +216,17 @@ export class PineconeVectorAdapter implements VectorStoreAdapter {
    * {@link VectorStoreAdapter} contract (cosine scores can be negative for
    * opposing vectors).
    */
-  async query(vector: number[], topK: number): Promise<VectorQueryMatch[]> {
+  async query(
+    vector: number[],
+    topK: number,
+    filter?: VectorMetadataFilter
+  ): Promise<VectorQueryMatch[]> {
+    const metadataFilter = toPineconeMetadataFilter(filter);
     const data = await this.request<PineconeQueryResponse>("/query", {
       vector,
       topK: Math.max(1, Math.floor(topK)),
       includeMetadata: true,
+      ...(metadataFilter ? { filter: metadataFilter } : {}),
       ...(this.namespace ? { namespace: this.namespace } : {}),
     });
 
@@ -233,9 +254,13 @@ export class PineconeVectorAdapter implements VectorStoreAdapter {
    * cosine similarity of `vector`. Returns `null` on a miss or any backend
    * failure so the middleware falls back to the live LLM call.
    */
-  async search(vector: number[], threshold: number): Promise<string | null> {
+  async search(
+    vector: number[],
+    threshold: number,
+    filter?: VectorMetadataFilter
+  ): Promise<string | null> {
     try {
-      const [best] = await this.query(vector, 1);
+      const [best] = await this.query(vector, 1, filter);
       if (!best || best.score < threshold) return null;
 
       const response = best.metadata[RESPONSE_METADATA_KEY];
@@ -253,9 +278,14 @@ export class PineconeVectorAdapter implements VectorStoreAdapter {
    * Persists a prompt embedding alongside the LLM response it produced.
    * Failures are logged but never re-thrown — caching is best-effort.
    */
-  async save(promptVector: number[], response: string): Promise<void> {
+  async save(
+    promptVector: number[],
+    response: string,
+    metadata: VectorMetadata = {}
+  ): Promise<void> {
     try {
       await this.upsert(crypto.randomUUID(), promptVector, {
+        ...metadata,
         [RESPONSE_METADATA_KEY]: response,
         createdAt: new Date().toISOString(),
       });

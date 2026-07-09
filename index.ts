@@ -29,7 +29,11 @@ import {
 // ---------------------------------------------------------------------------
 
 export type { VectorStoreAdapter, SemanticCacheMiddlewareOptions };
-export type { VectorMetadata, VectorQueryMatch } from "./vector-store-adapter";
+export type {
+  VectorMetadata,
+  VectorMetadataFilter,
+  VectorQueryMatch,
+} from "./vector-store-adapter";
 export { SemanticCacheMiddleware };
 export { RedisVectorAdapter } from "./redis-vector-adapter";
 export { UpstashVectorAdapter } from "./upstash-vector-adapter";
@@ -83,6 +87,16 @@ export interface SemanticCacheOptions {
    * @default 0.92
    */
   threshold?: number;
+
+  /**
+   * Optional user identifier forwarded to the middleware for cache isolation.
+   */
+  userId?: string;
+
+  /**
+   * Optional tenant identifier forwarded to the middleware for cache isolation.
+   */
+  tenantId?: string;
 
   /**
    * Emit cache hit/miss debug logs to `console.debug`.
@@ -139,12 +153,20 @@ export function withSemanticCache<M extends LanguageModel>(
   model: M,
   options: SemanticCacheOptions
 ): M {
-  const { adapter, threshold = 0.92, debug = false } = options;
+  const {
+    adapter,
+    threshold = 0.92,
+    userId,
+    tenantId,
+    debug = false,
+  } = options;
 
   // Build the middleware with the caller-supplied adapter and threshold.
   const middleware = SemanticCacheMiddleware({
     vectorStore: adapter,
     similarityThreshold: threshold,
+    userId,
+    tenantId,
     debug,
   });
 

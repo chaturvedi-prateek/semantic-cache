@@ -50,10 +50,12 @@
  */
 
 import type {
+  VectorMetadataFilter,
   VectorStoreAdapter,
   VectorMetadata,
   VectorQueryMatch,
 } from "./vector-store-adapter";
+import { getAllowedMetadataFilterEntries } from "./metadata-filter";
 
 // ---------------------------------------------------------------------------
 // PgPoolLike — minimal interface compatible with pg.Pool / pg.Client and
@@ -109,6 +111,34 @@ export interface PgVectorAdapterOptions {
 
 /** Metadata key under which `save()` stores the cached LLM response. */
 const RESPONSE_METADATA_KEY = "response" as const;
+function buildMetadataFilterWhereClause(
+  filter: VectorMetadataFilter | undefined,
+  startingParameterIndex: number
+): { clause: string; values: string[] } {
+  if (!filter) {
+    return { clause: "", values: [] };
+  }
+
+  const entries = getAllowedMetadataFilterEntries(filter);
+
+  if (entries.length === 0) {
+    return { clause: "", values: [] };
+  }
+
+  return {
+    clause:
+      "WHERE " +
+      entries
+        .map(
+          ([key], index) =>
+            key === "userId"
+              ? `metadata ->> 'userId' = $${startingParameterIndex + index}`
+              : `metadata ->> 'tenantId' = $${startingParameterIndex + index}`
+        )
+        .join(" AND "),
+    values: entries.map(([, value]) => value),
+  };
+}
 
 // ---------------------------------------------------------------------------
 // PgVectorAdapter
@@ -181,7 +211,12 @@ export class PgVectorAdapter implements VectorStoreAdapter {
    * distances in [0, 2].  Scores are reported as `1 − distance`, clamped
    * to [0, 1].
    */
-  async query(vector: number[], topK: number): Promise<VectorQueryMatch[]> {
+  async query(
+    vector: number[],
+    topK: number,
+    filter?: VectorMetadataFilter
+  ): Promise<VectorQueryMatch[]> {
+    const metadataFilter = buildMetadataFilterWhereClause(filter, 2);
     // `embedding <=> $1::vector` computes the cosine distance between the
     // stored embedding and the query vector.  Lower distance = more similar.
     // `1 - (embedding <=> ...)` converts distance to similarity in [0, 1].
@@ -194,9 +229,14 @@ export class PgVectorAdapter implements VectorStoreAdapter {
               1 - (embedding <=> $1::vector) AS score,
               metadata
        FROM ${this.tableName}
+      ${metadataFilter.clause}
        ORDER BY embedding <=> $1::vector
-       LIMIT $2`,
-      [`[${vector.join(",")}]`, Math.max(1, Math.floor(topK))]
+       LIMIT $${metadataFilter.values.length + 2}`,
+      [
+        `[${vector.join(",")}]`,
+        ...metadataFilter.values,
+        Math.max(1, Math.floor(topK)),
+      ]
     );
 
     return rows.map((row) => ({
@@ -224,9 +264,13 @@ export class PgVectorAdapter implements VectorStoreAdapter {
    * cosine similarity of `vector`. Returns `null` on a miss or any backend
    * failure so the middleware falls back to the live LLM call.
    */
-  async search(vector: number[], threshold: number): Promise<string | null> {
+  async search(
+    vector: number[],
+    threshold: number,
+    filter?: VectorMetadataFilter
+  ): Promise<string | null> {
     try {
-      const [best] = await this.query(vector, 1);
+      const [best] = await this.query(vector, 1, filter);
       if (!best || best.score < threshold) return null;
 
       const response = best.metadata[RESPONSE_METADATA_KEY];
@@ -244,9 +288,14 @@ export class PgVectorAdapter implements VectorStoreAdapter {
    * Persists a prompt embedding alongside the LLM response it produced.
    * Failures are logged but never re-thrown — caching is best-effort.
    */
-  async save(promptVector: number[], response: string): Promise<void> {
+  async save(
+    promptVector: number[],
+    response: string,
+    metadata: VectorMetadata = {}
+  ): Promise<void> {
     try {
       await this.upsert(crypto.randomUUID(), promptVector, {
+        ...metadata,
         [RESPONSE_METADATA_KEY]: response,
         createdAt: new Date().toISOString(),
       });

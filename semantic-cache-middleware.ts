@@ -60,9 +60,14 @@ export type LanguageModelV4Middleware = LanguageModelMiddleware;
 export type {
   VectorStoreAdapter,
   VectorMetadata,
+  VectorMetadataFilter,
   VectorQueryMatch,
 } from "./vector-store-adapter";
-import type { VectorStoreAdapter } from "./vector-store-adapter";
+import type {
+  VectorMetadata,
+  VectorMetadataFilter,
+  VectorStoreAdapter,
+} from "./vector-store-adapter";
 
 // ---------------------------------------------------------------------------
 // 2. Singleton embedding model
@@ -120,32 +125,52 @@ async function getEmbeddingPipeline(): Promise<EmbeddingPipeline> {
  * Collapses a LanguageModelV1 prompt (an array of messages) into a single
  * plain-text string suitable for embedding.
  *
- * Only the most recent *user* message is embedded by default, which keeps
- * the cache key stable across varying system-prompt versions.  Override this
- * function if you need full-conversation hashing.
+ * Includes the latest user turn together with surrounding prompt context so
+ * different system prompts or prior conversation history do not collide.
  */
 function extractPromptText(prompt: unknown): string {
   if (!Array.isArray(prompt)) {
     return "";
   }
 
-  const userMessages = prompt
-    .filter((m) => m && typeof m === "object" && m.role === "user")
-    .flatMap((m) => {
-      const content = m.content;
-      if (!Array.isArray(content)) {
+  const messages = prompt
+    .flatMap((message) => {
+      if (!message || typeof message !== "object") {
         return [];
       }
-      return content
-        .filter(
-          (part): part is { type: "text"; text: string } =>
-            part && typeof part === "object" && part.type === "text" && typeof part.text === "string"
-        )
-        .map((part) => part.text);
-    });
 
-  // Use the last user turn as the cache key.
-  return userMessages.at(-1) ?? "";
+      const role = typeof message.role === "string" ? message.role : "unknown";
+      const content = message.content;
+      const text =
+        typeof content === "string"
+          ? content.trim()
+          : Array.isArray(content)
+            ? content
+                .filter(
+                  (part): part is { type: "text"; text: string } =>
+                    part &&
+                    typeof part === "object" &&
+                    part.type === "text" &&
+                    typeof part.text === "string"
+                )
+                .map((part) => part.text.trim())
+                .filter(Boolean)
+                .join("\n")
+            : "";
+
+      if (!text) {
+        return [];
+      }
+
+      return [`${role}: ${text}`];
+    })
+    .filter(Boolean);
+
+  if (messages.length === 0) {
+    return "";
+  }
+
+  return messages.join("\n\n");
 }
 
 // ---------------------------------------------------------------------------
@@ -255,6 +280,18 @@ export interface SemanticCacheMiddlewareOptions {
   similarityThreshold?: number;
 
   /**
+   * Optional user identifier written into cache metadata and applied as a
+   * lookup filter.
+   */
+  userId?: string;
+
+  /**
+   * Optional tenant identifier written into cache metadata and applied as a
+   * lookup filter.
+   */
+  tenantId?: string;
+
+  /**
    * When `true`, logs cache hits/misses to `console.debug`.
    * Disable in production or pipe to your own logger.
    * @default false
@@ -272,6 +309,7 @@ export interface SemanticCacheMiddlewareOptions {
  * Prefixed with `__` to minimise collision risk with real provider keys.
  */
 const CACHE_HIT_SENTINEL = "__semanticCacheHit" as const;
+const PROMPT_VECTOR_SENTINEL = "__semanticCachePromptVector" as const;
 
 // ---------------------------------------------------------------------------
 // 8. SemanticCacheMiddleware factory
@@ -300,21 +338,24 @@ const CACHE_HIT_SENTINEL = "__semanticCacheHit" as const;
 export function SemanticCacheMiddleware(
   options: SemanticCacheMiddlewareOptions
 ): LanguageModelV4Middleware {
-  const { vectorStore, similarityThreshold = 0.92, debug = false } = options;
-
-  // -------------------------------------------------------------------------
-  // Ephemeral per-request state: thread the prompt vector from
-  // transformParams → wrapGenerate without mutating the SDK params object.
-  //
-  // ⚠️  This Map is process-scoped.  In high-concurrency environments consider
-  //      AsyncLocalStorage to ensure true per-request isolation.
-  // -------------------------------------------------------------------------
-  const _promptVectorByText = new Map<string, number[]>();
+  const {
+    vectorStore,
+    similarityThreshold = 0.92,
+    userId,
+    tenantId,
+    debug = false,
+  } = options;
+  const metadataFilter: VectorMetadataFilter | undefined =
+    userId || tenantId ? { userId, tenantId } : undefined;
 
   /** Scoped logger — no-ops unless `debug` is true. */
   const log = (...args: unknown[]): void => {
     if (debug) console.debug("[SemanticCache]", ...args);
   };
+
+  const buildCacheMetadata = (): VectorMetadata => ({
+    ...(metadataFilter ?? {}),
+  });
 
   // =========================================================================
   // transformParams
@@ -342,14 +383,11 @@ export function SemanticCacheMiddleware(
     // ------------------------------------------------------------------
     const promptVector = await generateEmbedding(promptText);
 
-    // Stash the vector keyed by prompt text so wrapGenerate can access it
-    // on a cache miss without re-embedding.
-    _promptVectorByText.set(promptText, promptVector);
-
     // Probe the vector store.
     const cachedResponse = await vectorStore.search(
       promptVector,
-      similarityThreshold
+      similarityThreshold,
+      metadataFilter
     );
 
     if (cachedResponse !== null) {
@@ -369,8 +407,15 @@ export function SemanticCacheMiddleware(
 
     // ── Cache MISS ────────────────────────────────────────────────────
     log(`Cache MISS — "${promptText.slice(0, 72)}…"`);
-    // Return params unmodified; wrapGenerate will call the real LLM.
-    return params;
+    // Thread the vector through providerMetadata so wrapGenerate can save it
+    // without relying on any process-scoped shared state.
+    return {
+      ...params,
+      providerMetadata: {
+        ...((params as any).providerMetadata ?? {}),
+        [PROMPT_VECTOR_SENTINEL]: promptVector,
+      },
+    } as any;
   };
 
   // =========================================================================
@@ -401,7 +446,9 @@ export function SemanticCacheMiddleware(
 
     // Persist asynchronously — we must NOT block the response path.
     const promptText = extractPromptText(params.prompt);
-    const promptVector = _promptVectorByText.get(promptText);
+    const promptVector = ((params as any).providerMetadata ?? {})[
+      PROMPT_VECTOR_SENTINEL
+    ] as number[] | undefined;
 
     // SDK v4 uses `text` directly; fall back to content array for compatibility.
     const responseText: string =
@@ -411,16 +458,14 @@ export function SemanticCacheMiddleware(
 
     if (promptVector && responseText) {
       vectorStore
-        .save(promptVector, responseText)
+        .save(promptVector, responseText, buildCacheMetadata())
         .then(() => {
           log(`Saved embedding — "${promptText.slice(0, 72)}…"`);
-          // Remove the ephemeral vector; the cache is now the source of truth.
-          _promptVectorByText.delete(promptText);
         })
         .catch((err: unknown) => {
           console.error(
             "[SemanticCache] Failed to persist to vector store:",
-            err
+            err instanceof Error ? err.message : err
           );
         });
     }
