@@ -131,7 +131,9 @@ function buildMetadataFilterWhereClause(
       entries
         .map(
           ([key], index) =>
-            `metadata ->> '${key}' = $${startingParameterIndex + index}`
+            key === "userId"
+              ? `metadata ->> 'userId' = $${startingParameterIndex + index}`
+              : `metadata ->> 'tenantId' = $${startingParameterIndex + index}`
         )
         .join(" AND "),
     values: entries.map(([, value]) => value),
