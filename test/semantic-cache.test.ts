@@ -277,4 +277,112 @@ describe("SemanticCacheMiddleware", () => {
     expect(mockVectorStore.save).toHaveBeenCalledTimes(2);
     expect(savedData.map((entry) => entry.response)).toEqual(["response B", "response A"]);
   });
+
+  it("short-circuits wrapStream on cache hits and saves streamed text on misses", async () => {
+    const middleware = SemanticCacheMiddleware({
+      vectorStore: mockVectorStore,
+      similarityThreshold: 0.92,
+      userId: "user-1",
+      tenantId: "tenant-1",
+    });
+
+    const params = {
+      prompt: [{ role: "user", content: [{ type: "text", text: "Stream this response" }] }],
+      model: {} as any,
+      mode: "regular" as const,
+    };
+
+    const transformedMissParams = await middleware.transformParams!({
+      type: "stream",
+      params: params as any,
+      model: {} as any,
+    });
+
+    const missChunks = [
+      { type: "stream-start", warnings: [] },
+      { type: "text-start", id: "text-1" },
+      { type: "text-delta", id: "text-1", delta: "Hello " },
+      { type: "text-delta", id: "text-1", delta: "streaming world" },
+      { type: "text-end", id: "text-1" },
+      {
+        type: "finish",
+        finishReason: "stop",
+        usage: {
+          promptTokens: 1,
+          completionTokens: 3,
+          inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
+          outputTokens: { total: 3, text: 3, reasoning: 0 },
+        },
+      },
+    ];
+
+    const missDoStream = vi.fn().mockResolvedValue({
+      stream: new ReadableStream({
+        start(controller) {
+          for (const chunk of missChunks) {
+            controller.enqueue(chunk);
+          }
+          controller.close();
+        },
+      }),
+    });
+
+    const missResult = await middleware.wrapStream!({
+      doGenerate: vi.fn(),
+      doStream: missDoStream,
+      params: transformedMissParams as any,
+      model: {} as any,
+    });
+
+    let streamedText = "";
+    const streamedTypes: string[] = [];
+    for await (const part of missResult.stream as any) {
+      streamedTypes.push(part.type);
+      if (part.type === "text-delta") {
+        streamedText += part.delta;
+      }
+    }
+
+    expect(streamedText).toBe("Hello streaming world");
+    expect(streamedTypes).toContain("text-delta");
+    expect(missDoStream).toHaveBeenCalledTimes(1);
+
+    await saveCompleted;
+    expect(mockVectorStore.save).toHaveBeenCalledTimes(1);
+    expect(savedData).toHaveLength(1);
+    expect(savedData[0].response).toBe("Hello streaming world");
+
+    const transformedHitParams = await middleware.transformParams!({
+      type: "stream",
+      params: params as any,
+      model: {} as any,
+    });
+
+    const hitDoStream = vi.fn();
+    const hitResult = await middleware.wrapStream!({
+      doGenerate: vi.fn(),
+      doStream: hitDoStream,
+      params: transformedHitParams as any,
+      model: {} as any,
+    });
+
+    let hitText = "";
+    const hitTypes: string[] = [];
+    for await (const part of hitResult.stream as any) {
+      hitTypes.push(part.type);
+      if (part.type === "text-delta") {
+        hitText += part.delta;
+      }
+    }
+
+    expect(hitText).toBe("Hello streaming world");
+    expect(hitTypes).toEqual([
+      "stream-start",
+      "text-start",
+      "text-delta",
+      "text-end",
+      "finish",
+    ]);
+    expect(hitDoStream).not.toHaveBeenCalled();
+  });
 });
