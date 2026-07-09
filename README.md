@@ -5,7 +5,7 @@
 [![npm version](https://img.shields.io/npm/v/next-semantic-cache.svg)](https://www.npmjs.com/package/next-semantic-cache)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-`next-semantic-cache` is a drop-in `LanguageModelV4Middleware` that intercepts prompts, embeds them locally, and serves cached responses when a semantically similar prompt has been seen before. It ships with a pluggable `VectorStoreAdapter` interface and a production-ready Redis (RediSearch / Upstash) implementation.
+`next-semantic-cache` is a drop-in `LanguageModelV4Middleware` that intercepts prompts, embeds them locally, and serves cached responses when a semantically similar prompt has been seen before. It ships with a pluggable `VectorStoreAdapter` interface plus built-in adapters for Redis (RediSearch / Upstash), PostgreSQL (`pgvector`), and lightweight in-memory development workflows.
 
 ---
 
@@ -154,6 +154,24 @@ came from the vector store and `false` on a live LLM call.
 | `ttlSeconds` | `number` | `0` | Auto-expire entries after N seconds. `0` = keep indefinitely. |
 | `connectionTimeoutMs` | `number` | `2000` | Timeout per Redis command before falling back to the LLM. |
 | `namespace` | `string` | — | Logical namespace (tenant, feature, or user ID) woven into the Next.js cache tags. Enables scoped invalidation via `invalidate()`. No effect outside Next.js. |
+
+### `MemoryVectorAdapter()`
+
+In-memory adapter for local development and tests.
+
+- Stores vectors in a process-local `Map`.
+- Uses pure JavaScript cosine similarity for `query()`/`search()`.
+- Requires no external database or additional dependencies.
+
+### `PgVectorAdapter(options)`
+
+PostgreSQL + `pgvector` adapter for production workloads where vectors are
+stored in your relational database.
+
+### `RedisStackVectorAdapter(options)`
+
+Redis Stack adapter for self-hosted Redis deployments using RediSearch vector
+indexing.
 
 ---
 

@@ -36,6 +36,14 @@ export { UpstashVectorAdapter } from "./upstash-vector-adapter";
 export type { UpstashVectorAdapterOptions } from "./upstash-vector-adapter";
 export { PineconeVectorAdapter } from "./pinecone-vector-adapter";
 export type { PineconeVectorAdapterOptions } from "./pinecone-vector-adapter";
+export { PgVectorAdapter } from "./pgvector-adapter";
+export type { PgVectorAdapterOptions, PgPoolLike } from "./pgvector-adapter";
+export { RedisStackVectorAdapter } from "./redis-stack-adapter";
+export { MemoryVectorAdapter } from "./memory-vector-adapter";
+export type {
+  RedisStackVectorAdapterOptions,
+  RedisClientLike,
+} from "./redis-stack-adapter";
 
 // Next.js native-cache integration helpers (safe to import outside Next.js).
 export {
