@@ -7,6 +7,8 @@
 
 `next-semantic-cache` is a drop-in `LanguageModelV4Middleware` that intercepts prompts, embeds them locally, and serves cached responses when a semantically similar prompt has been seen before. It ships with a pluggable `VectorStoreAdapter` interface plus built-in adapters for Redis (RediSearch / Upstash), PostgreSQL (`pgvector`), and lightweight in-memory development workflows.
 
+> ⚠️ **Edge runtime note:** Edge runtime deployment is supported only when using a hosted embedding provider (for example, OpenAI or Upstash). The default local `@huggingface/transformers` embedding path (ONNX/WASM) is not supported in standard Vercel Edge functions.
+
 ---
 
 ## Why?

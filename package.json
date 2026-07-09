@@ -1,7 +1,7 @@
 {
   "name": "next-semantic-cache",
   "version": "1.0.1",
-  "description": "**Cut your OpenAI / Anthropic bill. Slash latency to ~50 ms. Compute embeddings for free — locally, on every request.**",
+  "description": "Low-latency semantic caching for Vercel AI SDK.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
@@ -76,7 +76,7 @@
   },
   "keywords": [],
   "author": "Prateek Chaturvedi",
-  "license": "ISC",
+  "license": "MIT",
   "type": "commonjs",
   "dependencies": {
     "@ai-sdk/provider": "^4.0.2",

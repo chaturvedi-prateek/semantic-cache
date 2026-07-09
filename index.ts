@@ -140,8 +140,6 @@ export interface SemanticCacheOptions {
  *   debug: process.env.NODE_ENV === "development",
  * });
  *
- * export const runtime = "edge";
- *
  * export async function POST(req: Request) {
  *   const { prompt } = await req.json();
  *   const result = streamText({ model: cachedModel, prompt });
