@@ -47,9 +47,14 @@ describe("SemanticCacheMiddleware", () => {
     response: string;
     metadata: VectorMetadata;
   }>;
+  let resolveSave!: () => void;
+  let saveCompleted: Promise<void>;
 
   beforeEach(() => {
     savedData = [];
+    saveCompleted = new Promise<void>((resolve) => {
+      resolveSave = resolve;
+    });
     mockVectorStore = {
       search: vi.fn(
         async (
@@ -73,6 +78,7 @@ describe("SemanticCacheMiddleware", () => {
           metadata: VectorMetadata = {}
         ) => {
           savedData.push({ vector, response, metadata });
+          resolveSave();
         }
       ),
       upsert: vi.fn(async () => {}),
@@ -131,8 +137,7 @@ describe("SemanticCacheMiddleware", () => {
     );
     expect(mockDoGenerate).toHaveBeenCalledTimes(1);
 
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
+    await saveCompleted;
     expect(mockVectorStore.save).toHaveBeenCalledTimes(1);
     expect(savedData).toHaveLength(1);
     expect(savedData[0].metadata).toMatchObject({

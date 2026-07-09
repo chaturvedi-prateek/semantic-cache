@@ -170,21 +170,7 @@ function extractPromptText(prompt: unknown): string {
     return "";
   }
 
-  let lastUserIndex = -1;
-  for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i].startsWith("user: ")) {
-      lastUserIndex = i;
-      break;
-    }
-  }
-
-  return lastUserIndex >= 0
-    ? [
-        messages[lastUserIndex],
-        ...messages.slice(0, lastUserIndex),
-        ...messages.slice(lastUserIndex + 1),
-      ].join("\n\n")
-    : messages.join("\n\n");
+  return messages.join("\n\n");
 }
 
 // ---------------------------------------------------------------------------

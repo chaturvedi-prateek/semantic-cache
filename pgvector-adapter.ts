@@ -110,6 +110,7 @@ export interface PgVectorAdapterOptions {
 
 /** Metadata key under which `save()` stores the cached LLM response. */
 const RESPONSE_METADATA_KEY = "response" as const;
+const FILTER_METADATA_KEYS = ["userId", "tenantId"] as const;
 
 function buildMetadataFilterWhereClause(
   filter: VectorMetadataFilter | undefined,
@@ -119,8 +120,8 @@ function buildMetadataFilterWhereClause(
     return { clause: "", values: [] };
   }
 
-  const entries = Object.entries(filter).filter(
-    (entry): entry is [string, string] => typeof entry[1] === "string"
+  const entries = FILTER_METADATA_KEYS.flatMap((key) =>
+    typeof filter[key] === "string" ? [[key, filter[key]]] : []
   );
 
   if (entries.length === 0) {

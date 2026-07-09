@@ -55,8 +55,12 @@ describe("RedisVectorAdapter", () => {
     expect(hsetCall[6]).toBe("response");
     expect(hsetCall[7]).toBe("cached_response");
     expect(hsetCall[8]).toBe("createdAt");
-    expect(hsetCall).toContain("userId");
-    expect(hsetCall).toContain("tenantId");
+    const userIdIndex = hsetCall.indexOf("userId");
+    const tenantIdIndex = hsetCall.indexOf("tenantId");
+    expect(userIdIndex).toBeGreaterThan(-1);
+    expect(tenantIdIndex).toBeGreaterThan(-1);
+    expect(hsetCall[userIdIndex + 1]).toBe("user-1");
+    expect(hsetCall[tenantIdIndex + 1]).toBe("tenant-1");
 
     // Let's verify the EXPIRE command
     const expireCall = mockRequest.mock.calls[2][0].command;

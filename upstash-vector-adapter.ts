@@ -230,7 +230,7 @@ export class UpstashVectorAdapter implements VectorStoreAdapter {
       vector,
       topK: Math.max(1, Math.floor(topK)),
       includeMetadata: true,
-      ...(metadataFilter ? { filter: metadataFilter } : {}),
+      ...(metadataFilter !== undefined ? { filter: metadataFilter } : {}),
     });
 
     return (data.result ?? []).map((match) => ({
