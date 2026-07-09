@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { generateEmbedding, SemanticCacheMiddleware } from "../semantic-cache-middleware";
 import { withSemanticCache } from "../index";
 import type { VectorStoreAdapter } from "../semantic-cache-middleware";
-import type { LanguageModel, LanguageModelV4 } from "ai";
+import type { LanguageModel } from "ai";
 
 describe("generateEmbedding", () => {
   it("should generate 384-dimensional embedding using all-MiniLM-L6-v2", async () => {
@@ -36,6 +36,16 @@ describe("SemanticCacheMiddleware", () => {
       save: vi.fn(async (vector: number[], response: string) => {
         savedData.push({ vector, response });
       }),
+      upsert: vi.fn(async (id: string, vector: number[], metadata: any) => {
+        // Mock upsert implementation
+      }),
+      query: vi.fn(async (vector: number[], threshold: number) => {
+        // Mock query implementation
+        return [];
+      }),
+      delete: vi.fn(async (id: string) => {
+        // Mock delete implementation
+      }),
     };
   });
 
@@ -62,19 +72,23 @@ describe("SemanticCacheMiddleware", () => {
 
     // Transform params
     const transformedParams = await middleware.transformParams!({
+      type: "generate",
       params: params as any,
+      model: {} as any,
     });
 
     expect(transformedParams).toBeDefined();
-    expect(transformedParams.providerMetadata).toBeUndefined(); // No hit sentinel
+    expect((transformedParams as any).__semanticCacheHit).toBeUndefined(); // No hit sentinel
 
     // Wrap generate
     const result = await middleware.wrapGenerate!({
       doGenerate: mockDoGenerate,
+      doStream: vi.fn(),
       params: transformedParams as any,
+      model: {} as any,
     });
 
-    expect(result.text).toBe("This is a prompt response from the LLM.");
+    expect((result.content[0] as { type: "text"; text: string }).text).toBe("This is a prompt response from the LLM.");
     expect(mockDoGenerate).toHaveBeenCalledTimes(1);
 
     // Give asynchronous save a moment to run
@@ -88,19 +102,23 @@ describe("SemanticCacheMiddleware", () => {
     mockDoGenerate.mockClear();
 
     const transformedParamsHit = await middleware.transformParams!({
+      type: "generate",
       params: params as any,
+      model: {} as any,
     });
 
-    // It should have the cache hit sentinel in providerMetadata
-    expect(transformedParamsHit.providerMetadata).toBeDefined();
-    expect((transformedParamsHit.providerMetadata as any).__semanticCacheHit).toBe("This is a prompt response from the LLM.");
+    // It should have the cache hit sentinel (smuggled through providerMetadata)
+    expect((transformedParamsHit as any).providerMetadata?.__semanticCacheHit).toBeDefined();
+    expect((transformedParamsHit as any).providerMetadata?.__semanticCacheHit).toBe("This is a prompt response from the LLM.");
 
     const resultHit = await middleware.wrapGenerate!({
       doGenerate: mockDoGenerate,
+      doStream: vi.fn(),
       params: transformedParamsHit as any,
+      model: {} as any,
     });
 
-    expect(resultHit.text).toBe("This is a prompt response from the LLM.");
+    expect((resultHit.content[0] as { type: "text"; text: string }).text).toBe("This is a prompt response from the LLM.");
     expect(mockDoGenerate).not.toHaveBeenCalled(); // Short-circuited!
   });
 });
