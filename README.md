@@ -5,7 +5,7 @@
 [![npm version](https://img.shields.io/npm/v/next-semantic-cache.svg)](https://www.npmjs.com/package/next-semantic-cache)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-`next-semantic-cache` is a drop-in `LanguageModelV4Middleware` that intercepts prompts, embeds them locally, and serves cached responses when a semantically similar prompt has been seen before. It ships with a pluggable `VectorStoreAdapter` interface plus built-in adapters for Redis (RediSearch / Upstash) and lightweight in-memory development workflows.
+`next-semantic-cache` is a drop-in `LanguageModelV4Middleware` that intercepts prompts, embeds them locally, and serves cached responses when a semantically similar prompt has been seen before. It ships with a pluggable `VectorStoreAdapter` interface plus built-in adapters for Redis (RediSearch / Upstash), PostgreSQL (`pgvector`), and lightweight in-memory development workflows.
 
 ---
 
@@ -162,6 +162,16 @@ In-memory adapter for local development and tests.
 - Stores vectors in a process-local `Map`.
 - Uses pure JavaScript cosine similarity for `query()`/`search()`.
 - Requires no external database or additional dependencies.
+
+### `PgVectorAdapter(options)`
+
+PostgreSQL + `pgvector` adapter for production workloads where vectors are
+stored in your relational database.
+
+### `RedisStackVectorAdapter(options)`
+
+Redis Stack adapter for self-hosted Redis deployments using RediSearch vector
+indexing.
 
 ---
 
