@@ -16,6 +16,10 @@
     "dist/next-app-router.d.ts",
     "dist/redis-vector-adapter.js",
     "dist/redis-vector-adapter.d.ts",
+    "dist/upstash-vector-adapter.js",
+    "dist/upstash-vector-adapter.d.ts",
+    "dist/pinecone-vector-adapter.js",
+    "dist/pinecone-vector-adapter.d.ts",
     "dist/vector-store-adapter.js",
     "dist/vector-store-adapter.d.ts",
     "dist/next-cache.js",
@@ -38,6 +42,14 @@
     "./redis-vector-adapter": {
       "types": "./dist/redis-vector-adapter.d.ts",
       "default": "./dist/redis-vector-adapter.js"
+    },
+    "./upstash-vector-adapter": {
+      "types": "./dist/upstash-vector-adapter.d.ts",
+      "default": "./dist/upstash-vector-adapter.js"
+    },
+    "./pinecone-vector-adapter": {
+      "types": "./dist/pinecone-vector-adapter.d.ts",
+      "default": "./dist/pinecone-vector-adapter.js"
     },
     "./vector-store-adapter": {
       "types": "./dist/vector-store-adapter.d.ts",
