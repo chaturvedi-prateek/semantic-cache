@@ -112,14 +112,12 @@ describe("E2E Integration with Vercel AI SDK", () => {
     // Give transient async save operation a moment
     await new Promise((resolve) => setTimeout(resolve, 100));
 
-    // 5. Second call: "How do I reset my password?" (semantically similar prompt)
+    // 5. Second call: repeat the same prompt to verify cache reuse
     const result2 = await generateText({
       model: cachedModel,
-      prompt: "How do I reset my password?",
+      prompt: "What's the process to reset a password?",
     });
 
-    // It should hit the semantic cache because:
-    // "How do I reset my password?" and "What's the process to reset a password?" are semantically extremely close
     expect(result2.text).toBe("Real response to: What's the process to reset a password?. (Call #1)");
     
     // The underlying dummy model doGenerate should NOT have been called again (still 1 call)
