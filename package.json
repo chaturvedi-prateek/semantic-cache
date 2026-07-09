@@ -8,28 +8,7 @@
     "build": "tsc"
   },
   "files": [
-    "dist/index.js",
-    "dist/index.d.ts",
-    "dist/semantic-cache-middleware.js",
-    "dist/semantic-cache-middleware.d.ts",
-    "dist/next-app-router.js",
-    "dist/next-app-router.d.ts",
-    "dist/redis-vector-adapter.js",
-    "dist/redis-vector-adapter.d.ts",
-    "dist/upstash-vector-adapter.js",
-    "dist/upstash-vector-adapter.d.ts",
-    "dist/pinecone-vector-adapter.js",
-    "dist/pinecone-vector-adapter.d.ts",
-    "dist/pgvector-adapter.js",
-    "dist/pgvector-adapter.d.ts",
-    "dist/redis-stack-adapter.js",
-    "dist/redis-stack-adapter.d.ts",
-    "dist/memory-vector-adapter.js",
-    "dist/memory-vector-adapter.d.ts",
-    "dist/vector-store-adapter.js",
-    "dist/vector-store-adapter.d.ts",
-    "dist/next-cache.js",
-    "dist/next-cache.d.ts",
+    "dist",
     "README.md"
   ],
   "exports": {
@@ -37,41 +16,45 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
-    "./next": {
-      "types": "./dist/next-app-router.d.ts",
-      "default": "./dist/next-app-router.js"
-    },
     "./semantic-cache-middleware": {
       "types": "./dist/semantic-cache-middleware.d.ts",
       "default": "./dist/semantic-cache-middleware.js"
     },
-    "./redis-vector-adapter": {
-      "types": "./dist/redis-vector-adapter.d.ts",
-      "default": "./dist/redis-vector-adapter.js"
-    },
-    "./upstash-vector-adapter": {
-      "types": "./dist/upstash-vector-adapter.d.ts",
-      "default": "./dist/upstash-vector-adapter.js"
-    },
-    "./pinecone-vector-adapter": {
-      "types": "./dist/pinecone-vector-adapter.d.ts",
-      "default": "./dist/pinecone-vector-adapter.js"
-    },
-    "./pgvector-adapter": {
-      "types": "./dist/pgvector-adapter.d.ts",
-      "default": "./dist/pgvector-adapter.js"
-    },
-    "./redis-stack-adapter": {
-      "types": "./dist/redis-stack-adapter.d.ts",
-      "default": "./dist/redis-stack-adapter.js"
-    },
-    "./memory-vector-adapter": {
-      "types": "./dist/memory-vector-adapter.d.ts",
-      "default": "./dist/memory-vector-adapter.js"
-    },
     "./vector-store-adapter": {
       "types": "./dist/vector-store-adapter.d.ts",
       "default": "./dist/vector-store-adapter.js"
+    },
+    "./adapters/memory": {
+      "types": "./dist/adapters/memory.d.ts",
+      "default": "./dist/adapters/memory.js"
+    },
+    "./adapters/redis": {
+      "types": "./dist/adapters/redis.d.ts",
+      "default": "./dist/adapters/redis.js"
+    },
+    "./adapters/upstash": {
+      "types": "./dist/adapters/upstash.d.ts",
+      "default": "./dist/adapters/upstash.js"
+    },
+    "./adapters/pinecone": {
+      "types": "./dist/adapters/pinecone.d.ts",
+      "default": "./dist/adapters/pinecone.js"
+    },
+    "./adapters/pgvector": {
+      "types": "./dist/adapters/pgvector.d.ts",
+      "default": "./dist/adapters/pgvector.js"
+    },
+    "./adapters/redis-stack": {
+      "types": "./dist/adapters/redis-stack.d.ts",
+      "default": "./dist/adapters/redis-stack.js"
+    },
+    "./next": {
+      "types": "./dist/next/app-router.d.ts",
+      "default": "./dist/next/app-router.js"
+    },
+    "./next/cache": {
+      "types": "./dist/next/cache.d.ts",
+      "default": "./dist/next/cache.js"
     }
   },
   "keywords": [],

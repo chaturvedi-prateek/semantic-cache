@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { PgVectorAdapter } from "../pgvector-adapter";
+import { PgVectorAdapter } from "../src/adapters/pgvector";
 
 describe("PgVectorAdapter", () => {
   let mockQuery: ReturnType<typeof vi.fn>;

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { UpstashVectorAdapter } from "../upstash-vector-adapter";
+import { UpstashVectorAdapter } from "../src/adapters/upstash";
 
 function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
   return new Response(JSON.stringify(body), {

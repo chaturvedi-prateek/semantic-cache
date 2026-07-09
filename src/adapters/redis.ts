@@ -37,14 +37,14 @@ import type {
   VectorMetadataFilter,
   VectorMetadata,
   VectorQueryMatch,
-} from "./vector-store-adapter";
-import { buildRedisFilterPrefix } from "./redis-metadata-filter";
+} from "../vector-store-adapter";
+import { buildRedisFilterPrefix } from "../redis-metadata-filter";
 import {
   buildCacheTags,
   revalidateNextTag,
   withNextCache,
   SEMANTIC_CACHE_TAG,
-} from "./next-cache";
+} from "../next/cache";
 
 // ---------------------------------------------------------------------------
 // Constants

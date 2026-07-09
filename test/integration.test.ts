@@ -1,8 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
 import "./mock-transformers";
 import { generateText } from "ai";
-import { withSemanticCache } from "../index";
-import type { VectorStoreAdapter } from "../semantic-cache-middleware";
+import { withSemanticCache } from "../src/index";
+import type { VectorStoreAdapter } from "../src/semantic-cache-middleware";
 import type { LanguageModelV4 } from "ai";
 
 describe("E2E Integration with Vercel AI SDK", () => {

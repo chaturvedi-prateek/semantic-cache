@@ -39,8 +39,8 @@ import type {
   VectorStoreAdapter,
   VectorMetadata,
   VectorQueryMatch,
-} from "./vector-store-adapter";
-import { getAllowedMetadataFilterEntries } from "./metadata-filter";
+} from "../vector-store-adapter";
+import { getAllowedMetadataFilterEntries } from "../metadata-filter";
 
 // ---------------------------------------------------------------------------
 // Options

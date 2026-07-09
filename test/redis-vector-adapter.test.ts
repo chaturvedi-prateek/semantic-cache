@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { RedisVectorAdapter } from "../redis-vector-adapter";
+import { RedisVectorAdapter } from "../src/adapters/redis";
 import { Redis } from "@upstash/redis";
 
 describe("RedisVectorAdapter", () => {

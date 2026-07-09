@@ -35,19 +35,19 @@ export type {
   VectorQueryMatch,
 } from "./vector-store-adapter";
 export { SemanticCacheMiddleware };
-export { RedisVectorAdapter } from "./redis-vector-adapter";
-export { UpstashVectorAdapter } from "./upstash-vector-adapter";
-export type { UpstashVectorAdapterOptions } from "./upstash-vector-adapter";
-export { PineconeVectorAdapter } from "./pinecone-vector-adapter";
-export type { PineconeVectorAdapterOptions } from "./pinecone-vector-adapter";
-export { PgVectorAdapter } from "./pgvector-adapter";
-export type { PgVectorAdapterOptions, PgPoolLike } from "./pgvector-adapter";
-export { RedisStackVectorAdapter } from "./redis-stack-adapter";
-export { MemoryVectorAdapter } from "./memory-vector-adapter";
+export { RedisVectorAdapter } from "./adapters/redis";
+export { UpstashVectorAdapter } from "./adapters/upstash";
+export type { UpstashVectorAdapterOptions } from "./adapters/upstash";
+export { PineconeVectorAdapter } from "./adapters/pinecone";
+export type { PineconeVectorAdapterOptions } from "./adapters/pinecone";
+export { PgVectorAdapter } from "./adapters/pgvector";
+export type { PgVectorAdapterOptions, PgPoolLike } from "./adapters/pgvector";
+export { RedisStackVectorAdapter } from "./adapters/redis-stack";
+export { MemoryVectorAdapter } from "./adapters/memory";
 export type {
   RedisStackVectorAdapterOptions,
   RedisClientLike,
-} from "./redis-stack-adapter";
+} from "./adapters/redis-stack";
 
 // Next.js native-cache integration helpers (safe to import outside Next.js).
 export {
@@ -56,7 +56,7 @@ export {
   isNextCacheAvailable,
   withNextCache,
   revalidateNextTag,
-} from "./next-cache";
+} from "./next/cache";
 
 // ---------------------------------------------------------------------------
 // withSemanticCache options

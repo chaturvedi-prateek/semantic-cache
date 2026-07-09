@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { PineconeVectorAdapter } from "../pinecone-vector-adapter";
+import { PineconeVectorAdapter } from "../src/adapters/pinecone";
 
 function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
   return new Response(JSON.stringify(body), {

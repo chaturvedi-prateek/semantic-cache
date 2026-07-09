@@ -4,12 +4,12 @@ import "./mock-transformers";
 import {
   generateEmbedding,
   SemanticCacheMiddleware,
-} from "../semantic-cache-middleware";
+} from "../src/semantic-cache-middleware";
 import type {
   VectorMetadata,
   VectorMetadataFilter,
   VectorStoreAdapter,
-} from "../semantic-cache-middleware";
+} from "../src/semantic-cache-middleware";
 
 describe("generateEmbedding", () => {
   it("should generate a normalized 384-dimensional embedding", async () => {
@@ -137,9 +137,9 @@ describe("SemanticCacheMiddleware", () => {
       model: {} as any,
     });
 
-    expect((transformedParamsHit as any).providerMetadata?.__semanticCacheHit).toBe(
-      "This is a prompt response from the LLM."
-    );
+    expect(
+      (transformedParamsHit as any).providerMetadata?.__semanticCache?.cacheHitText
+    ).toBe("This is a prompt response from the LLM.");
 
     const resultHit = await middleware.wrapGenerate!({
       doGenerate: mockDoGenerate,
@@ -235,7 +235,7 @@ describe("SemanticCacheMiddleware", () => {
     const wrapA = middleware.wrapGenerate!({
       doGenerate: vi.fn(
         () =>
-          new Promise((resolve) => {
+          new Promise<any>((resolve) => {
             resolveGenerateA = resolve;
           })
       ),

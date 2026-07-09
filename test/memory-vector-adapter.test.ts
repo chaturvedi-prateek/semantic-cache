@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { MemoryVectorAdapter } from "../memory-vector-adapter";
+import { MemoryVectorAdapter } from "../src/adapters/memory";
 
 describe("MemoryVectorAdapter", () => {
   it("upserts and queries by descending cosine similarity", async () => {

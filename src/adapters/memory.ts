@@ -10,7 +10,7 @@ import type {
   VectorMetadata,
   VectorQueryMatch,
   VectorStoreAdapter,
-} from "./vector-store-adapter";
+} from "../vector-store-adapter";
 
 /** Metadata key under which `save()` stores the cached LLM response. */
 const RESPONSE_METADATA_KEY = "response" as const;

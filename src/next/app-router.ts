@@ -52,7 +52,7 @@ import { NextResponse } from "next/server";
 import {
   generateEmbedding,
   type VectorStoreAdapter,
-} from "./semantic-cache-middleware";
+} from "../semantic-cache-middleware";
 
 // ---------------------------------------------------------------------------
 // Public types

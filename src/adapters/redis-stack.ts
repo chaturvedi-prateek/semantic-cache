@@ -74,8 +74,8 @@ import type {
   VectorStoreAdapter,
   VectorMetadata,
   VectorQueryMatch,
-} from "./vector-store-adapter";
-import { buildRedisFilterPrefix } from "./redis-metadata-filter";
+} from "../vector-store-adapter";
+import { buildRedisFilterPrefix } from "../redis-metadata-filter";
 
 // ---------------------------------------------------------------------------
 // RedisClientLike — minimal interface compatible with node-redis v4

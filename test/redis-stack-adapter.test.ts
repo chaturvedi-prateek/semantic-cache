@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { RedisStackVectorAdapter } from "../redis-stack-adapter";
+import { RedisStackVectorAdapter } from "../src/adapters/redis-stack";
 
 describe("RedisStackVectorAdapter", () => {
   let sendCommand: ReturnType<typeof vi.fn>;
