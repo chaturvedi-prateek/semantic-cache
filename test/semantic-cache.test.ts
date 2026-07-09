@@ -187,4 +187,94 @@ describe("SemanticCacheMiddleware", () => {
 
     expect(firstVector).not.toEqual(secondVector);
   });
+
+  it("keeps concurrent identical prompts isolated until each save is scheduled", async () => {
+    let releaseFirstSave!: () => void;
+    const firstSaveReleased = new Promise<void>((resolve) => {
+      releaseFirstSave = resolve;
+    });
+    let resolveGenerateA!: (value: any) => void;
+
+    mockVectorStore.search = vi.fn(async () => null);
+    mockVectorStore.save = vi
+      .fn()
+      .mockImplementationOnce(
+        async (vector: number[], response: string, metadata: VectorMetadata = {}) => {
+          savedData.push({ vector, response, metadata });
+          await firstSaveReleased;
+        }
+      )
+      .mockImplementation(
+        async (vector: number[], response: string, metadata: VectorMetadata = {}) => {
+          savedData.push({ vector, response, metadata });
+        }
+      );
+
+    const middleware = SemanticCacheMiddleware({
+      vectorStore: mockVectorStore,
+      similarityThreshold: 0.92,
+    });
+
+    const params = {
+      prompt: [{ role: "user", content: [{ type: "text", text: "Same prompt" }] }],
+      model: {} as any,
+      mode: "regular" as const,
+    };
+
+    const transformedA = await middleware.transformParams!({
+      type: "generate",
+      params: params as any,
+      model: {} as any,
+    });
+    const transformedB = await middleware.transformParams!({
+      type: "generate",
+      params: params as any,
+      model: {} as any,
+    });
+
+    const wrapA = middleware.wrapGenerate!({
+      doGenerate: vi.fn(
+        () =>
+          new Promise((resolve) => {
+            resolveGenerateA = resolve;
+          })
+      ),
+      doStream: vi.fn(),
+      params: transformedA as any,
+      model: {} as any,
+    });
+
+    const wrapB = await middleware.wrapGenerate!({
+      doGenerate: vi.fn().mockResolvedValue({
+        text: "response B",
+        finishReason: "stop",
+        usage: { promptTokens: 1, completionTokens: 1 },
+        content: [{ type: "text", text: "response B" }],
+      }),
+      doStream: vi.fn(),
+      params: transformedB as any,
+      model: {} as any,
+    });
+
+    expect((wrapB.content[0] as { type: "text"; text: string }).text).toBe("response B");
+    expect(mockVectorStore.save).toHaveBeenCalledTimes(1);
+
+    releaseFirstSave();
+    await Promise.resolve();
+
+    resolveGenerateA({
+      text: "response A",
+      finishReason: "stop",
+      usage: { promptTokens: 1, completionTokens: 1 },
+      content: [{ type: "text", text: "response A" }],
+    });
+
+    const resultA = await wrapA;
+    expect((resultA.content[0] as { type: "text"; text: string }).text).toBe("response A");
+
+    await Promise.resolve();
+
+    expect(mockVectorStore.save).toHaveBeenCalledTimes(2);
+    expect(savedData.map((entry) => entry.response)).toEqual(["response B", "response A"]);
+  });
 });

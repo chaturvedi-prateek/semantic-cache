@@ -309,6 +309,7 @@ export interface SemanticCacheMiddlewareOptions {
  * Prefixed with `__` to minimise collision risk with real provider keys.
  */
 const CACHE_HIT_SENTINEL = "__semanticCacheHit" as const;
+const PROMPT_VECTOR_SENTINEL = "__semanticCachePromptVector" as const;
 
 // ---------------------------------------------------------------------------
 // 8. SemanticCacheMiddleware factory
@@ -347,15 +348,6 @@ export function SemanticCacheMiddleware(
   const metadataFilter: VectorMetadataFilter | undefined =
     userId || tenantId ? { userId, tenantId } : undefined;
 
-  // -------------------------------------------------------------------------
-  // Ephemeral per-request state: thread the prompt vector from
-  // transformParams → wrapGenerate without mutating the SDK params object.
-  //
-  // ⚠️  This Map is process-scoped.  In high-concurrency environments consider
-  //      AsyncLocalStorage to ensure true per-request isolation.
-  // -------------------------------------------------------------------------
-  const _promptVectorByText = new Map<string, number[]>();
-
   /** Scoped logger — no-ops unless `debug` is true. */
   const log = (...args: unknown[]): void => {
     if (debug) console.debug("[SemanticCache]", ...args);
@@ -391,10 +383,6 @@ export function SemanticCacheMiddleware(
     // ------------------------------------------------------------------
     const promptVector = await generateEmbedding(promptText);
 
-    // Stash the vector keyed by prompt text so wrapGenerate can access it
-    // on a cache miss without re-embedding.
-    _promptVectorByText.set(promptText, promptVector);
-
     // Probe the vector store.
     const cachedResponse = await vectorStore.search(
       promptVector,
@@ -419,8 +407,15 @@ export function SemanticCacheMiddleware(
 
     // ── Cache MISS ────────────────────────────────────────────────────
     log(`Cache MISS — "${promptText.slice(0, 72)}…"`);
-    // Return params unmodified; wrapGenerate will call the real LLM.
-    return params;
+    // Thread the vector through providerMetadata so wrapGenerate can save it
+    // without relying on any process-scoped shared state.
+    return {
+      ...params,
+      providerMetadata: {
+        ...((params as any).providerMetadata ?? {}),
+        [PROMPT_VECTOR_SENTINEL]: promptVector,
+      },
+    } as any;
   };
 
   // =========================================================================
@@ -451,7 +446,9 @@ export function SemanticCacheMiddleware(
 
     // Persist asynchronously — we must NOT block the response path.
     const promptText = extractPromptText(params.prompt);
-    const promptVector = _promptVectorByText.get(promptText);
+    const promptVector = ((params as any).providerMetadata ?? {})[
+      PROMPT_VECTOR_SENTINEL
+    ] as number[] | undefined;
 
     // SDK v4 uses `text` directly; fall back to content array for compatibility.
     const responseText: string =
@@ -470,9 +467,6 @@ export function SemanticCacheMiddleware(
             "[SemanticCache] Failed to persist to vector store:",
             err instanceof Error ? err.message : err
           );
-        })
-        .finally(() => {
-          _promptVectorByText.delete(promptText);
         });
     }
 
