@@ -104,6 +104,21 @@ describe("PineconeVectorAdapter", () => {
     expect(matches[1]).toEqual({ id: "b", score: 0, metadata: {} });
   });
 
+  it("passes metadata filters through query requests", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ matches: [] }));
+
+    const adapter = makeAdapter();
+    await adapter.query([0.1, 0.2], 2, { userId: "user-1", tenantId: "tenant-1" });
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect(JSON.parse(init.body)).toMatchObject({
+      filter: {
+        userId: { $eq: "user-1" },
+        tenantId: { $eq: "tenant-1" },
+      },
+    });
+  });
+
   it("deletes via POST /vectors/delete with ids and namespace", async () => {
     fetchMock.mockResolvedValue(jsonResponse({}));
 
@@ -169,7 +184,10 @@ describe("PineconeVectorAdapter", () => {
     fetchMock.mockResolvedValue(jsonResponse({ upsertedCount: 1 }));
 
     const adapter = makeAdapter();
-    await adapter.save([0.1, 0.2], "the answer");
+    await adapter.save([0.1, 0.2], "the answer", {
+      userId: "user-1",
+      tenantId: "tenant-1",
+    });
 
     const [, init] = fetchMock.mock.calls[0];
     const body = JSON.parse(init.body);
@@ -177,6 +195,8 @@ describe("PineconeVectorAdapter", () => {
     expect(typeof body.vectors[0].id).toBe("string");
     expect(body.vectors[0].values).toEqual([0.1, 0.2]);
     expect(body.vectors[0].metadata.response).toBe("the answer");
+    expect(body.vectors[0].metadata.userId).toBe("user-1");
+    expect(body.vectors[0].metadata.tenantId).toBe("tenant-1");
 
     // failure path is swallowed
     fetchMock.mockRejectedValue(new Error("boom"));

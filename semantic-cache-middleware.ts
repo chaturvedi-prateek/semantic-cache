@@ -60,9 +60,14 @@ export type LanguageModelV4Middleware = LanguageModelMiddleware;
 export type {
   VectorStoreAdapter,
   VectorMetadata,
+  VectorMetadataFilter,
   VectorQueryMatch,
 } from "./vector-store-adapter";
-import type { VectorStoreAdapter } from "./vector-store-adapter";
+import type {
+  VectorMetadata,
+  VectorMetadataFilter,
+  VectorStoreAdapter,
+} from "./vector-store-adapter";
 
 // ---------------------------------------------------------------------------
 // 2. Singleton embedding model
@@ -120,32 +125,66 @@ async function getEmbeddingPipeline(): Promise<EmbeddingPipeline> {
  * Collapses a LanguageModelV1 prompt (an array of messages) into a single
  * plain-text string suitable for embedding.
  *
- * Only the most recent *user* message is embedded by default, which keeps
- * the cache key stable across varying system-prompt versions.  Override this
- * function if you need full-conversation hashing.
+ * Includes the latest user turn together with surrounding prompt context so
+ * different system prompts or prior conversation history do not collide.
  */
 function extractPromptText(prompt: unknown): string {
   if (!Array.isArray(prompt)) {
     return "";
   }
 
-  const userMessages = prompt
-    .filter((m) => m && typeof m === "object" && m.role === "user")
-    .flatMap((m) => {
-      const content = m.content;
-      if (!Array.isArray(content)) {
+  const messages = prompt
+    .flatMap((message) => {
+      if (!message || typeof message !== "object") {
         return [];
       }
-      return content
-        .filter(
-          (part): part is { type: "text"; text: string } =>
-            part && typeof part === "object" && part.type === "text" && typeof part.text === "string"
-        )
-        .map((part) => part.text);
-    });
 
-  // Use the last user turn as the cache key.
-  return userMessages.at(-1) ?? "";
+      const role = typeof message.role === "string" ? message.role : "unknown";
+      const content = message.content;
+      const text =
+        typeof content === "string"
+          ? content.trim()
+          : Array.isArray(content)
+            ? content
+                .filter(
+                  (part): part is { type: "text"; text: string } =>
+                    part &&
+                    typeof part === "object" &&
+                    part.type === "text" &&
+                    typeof part.text === "string"
+                )
+                .map((part) => part.text.trim())
+                .filter(Boolean)
+                .join("\n")
+            : "";
+
+      if (!text) {
+        return [];
+      }
+
+      return [`${role}: ${text}`];
+    })
+    .filter(Boolean);
+
+  if (messages.length === 0) {
+    return "";
+  }
+
+  let lastUserIndex = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].startsWith("user: ")) {
+      lastUserIndex = i;
+      break;
+    }
+  }
+
+  return lastUserIndex >= 0
+    ? [
+        messages[lastUserIndex],
+        ...messages.slice(0, lastUserIndex),
+        ...messages.slice(lastUserIndex + 1),
+      ].join("\n\n")
+    : messages.join("\n\n");
 }
 
 // ---------------------------------------------------------------------------
@@ -255,6 +294,18 @@ export interface SemanticCacheMiddlewareOptions {
   similarityThreshold?: number;
 
   /**
+   * Optional user identifier written into cache metadata and applied as a
+   * lookup filter.
+   */
+  userId?: string;
+
+  /**
+   * Optional tenant identifier written into cache metadata and applied as a
+   * lookup filter.
+   */
+  tenantId?: string;
+
+  /**
    * When `true`, logs cache hits/misses to `console.debug`.
    * Disable in production or pipe to your own logger.
    * @default false
@@ -300,7 +351,15 @@ const CACHE_HIT_SENTINEL = "__semanticCacheHit" as const;
 export function SemanticCacheMiddleware(
   options: SemanticCacheMiddlewareOptions
 ): LanguageModelV4Middleware {
-  const { vectorStore, similarityThreshold = 0.92, debug = false } = options;
+  const {
+    vectorStore,
+    similarityThreshold = 0.92,
+    userId,
+    tenantId,
+    debug = false,
+  } = options;
+  const metadataFilter: VectorMetadataFilter | undefined =
+    userId || tenantId ? { userId, tenantId } : undefined;
 
   // -------------------------------------------------------------------------
   // Ephemeral per-request state: thread the prompt vector from
@@ -315,6 +374,10 @@ export function SemanticCacheMiddleware(
   const log = (...args: unknown[]): void => {
     if (debug) console.debug("[SemanticCache]", ...args);
   };
+
+  const buildCacheMetadata = (): VectorMetadata => ({
+    ...(metadataFilter ?? {}),
+  });
 
   // =========================================================================
   // transformParams
@@ -349,7 +412,8 @@ export function SemanticCacheMiddleware(
     // Probe the vector store.
     const cachedResponse = await vectorStore.search(
       promptVector,
-      similarityThreshold
+      similarityThreshold,
+      metadataFilter
     );
 
     if (cachedResponse !== null) {
@@ -411,17 +475,18 @@ export function SemanticCacheMiddleware(
 
     if (promptVector && responseText) {
       vectorStore
-        .save(promptVector, responseText)
+        .save(promptVector, responseText, buildCacheMetadata())
         .then(() => {
           log(`Saved embedding — "${promptText.slice(0, 72)}…"`);
-          // Remove the ephemeral vector; the cache is now the source of truth.
-          _promptVectorByText.delete(promptText);
         })
         .catch((err: unknown) => {
-          console.error(
-            "[SemanticCache] Failed to persist to vector store:",
-            err
+          log(
+            "Failed to persist to vector store:",
+            err instanceof Error ? err.message : err
           );
+        })
+        .finally(() => {
+          _promptVectorByText.delete(promptText);
         });
     }
 

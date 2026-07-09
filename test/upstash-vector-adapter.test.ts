@@ -86,6 +86,18 @@ describe("UpstashVectorAdapter", () => {
     expect(matches[0].metadata).toEqual({ response: "hi" });
   });
 
+  it("passes metadata filters through query requests", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ result: [] }));
+
+    const adapter = makeAdapter();
+    await adapter.query([0.1, 0.2], 3, { userId: "user-1", tenantId: "tenant-1" });
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect(JSON.parse(init.body)).toMatchObject({
+      filter: "userId = 'user-1' AND tenantId = 'tenant-1'",
+    });
+  });
+
   it("deletes via POST /delete with ids array", async () => {
     fetchMock.mockResolvedValue(jsonResponse({ result: { deleted: 1 } }));
 
@@ -144,13 +156,18 @@ describe("UpstashVectorAdapter", () => {
     fetchMock.mockResolvedValue(jsonResponse({ result: "Success" }));
 
     const adapter = makeAdapter();
-    await adapter.save([0.1, 0.2], "the answer");
+    await adapter.save([0.1, 0.2], "the answer", {
+      userId: "user-1",
+      tenantId: "tenant-1",
+    });
 
     const [, init] = fetchMock.mock.calls[0];
     const body = JSON.parse(init.body);
     expect(typeof body.id).toBe("string");
     expect(body.vector).toEqual([0.1, 0.2]);
     expect(body.metadata.response).toBe("the answer");
+    expect(body.metadata.userId).toBe("user-1");
+    expect(body.metadata.tenantId).toBe("tenant-1");
 
     // failure path is swallowed
     fetchMock.mockRejectedValue(new Error("boom"));

@@ -1,4 +1,20 @@
 import { describe, it, expect, vi } from "vitest";
+vi.mock("@huggingface/transformers", () => ({
+  pipeline: vi.fn(async () => async (text: string) => {
+    const vector = new Float32Array(384);
+    for (let i = 0; i < vector.length; i++) {
+      const code = text.charCodeAt(i % text.length) || i + 1;
+      vector[i] = ((code % 97) + 1) / 100;
+    }
+
+    const magnitude = Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0));
+    for (let i = 0; i < vector.length; i++) {
+      vector[i] = vector[i] / magnitude;
+    }
+
+    return { data: vector, dims: [1, 384] };
+  }),
+}));
 import { generateText } from "ai";
 import { withSemanticCache } from "../index";
 import type { VectorStoreAdapter } from "../semantic-cache-middleware";
@@ -26,6 +42,9 @@ describe("E2E Integration with Vercel AI SDK", () => {
       save: vi.fn(async (vector: number[], response: string) => {
         savedVectors.push({ vector, response });
       }),
+      upsert: vi.fn(async () => {}),
+      query: vi.fn(async () => []),
+      delete: vi.fn(async () => {}),
     };
 
     // Helper to calculate cosine similarity

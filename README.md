@@ -65,6 +65,8 @@ const model = wrapLanguageModel({
   middleware: SemanticCacheMiddleware({
     vectorStore,
     similarityThreshold: 0.92, // 0–1; higher = stricter match
+    tenantId: "tenant-123",
+    userId: "user-456",
   }),
 });
 
@@ -143,6 +145,8 @@ came from the vector store and `false` on a live LLM call.
 | --- | --- | --- | --- |
 | `vectorStore` | `VectorStoreAdapter` | **required** | The persistence backend for embeddings and responses. |
 | `similarityThreshold` | `number` | `0.92` | Minimum cosine similarity (0–1) for a cache hit. Higher = fewer, more accurate hits. |
+| `tenantId` | `string` | — | Optional tenant-level metadata filter applied to lookups and persisted on writes. |
+| `userId` | `string` | — | Optional user-level metadata filter applied to lookups and persisted on writes. |
 
 ### `RedisVectorAdapter(options)`
 
@@ -226,7 +230,7 @@ export class MyVectorAdapter implements VectorStoreAdapter {
    * Return the cached response if a stored vector is within `threshold`
    * cosine similarity of `vector`, otherwise `null`.
    */
-  async search(vector: number[], threshold: number): Promise<string | null> {
+  async search(vector: number[], threshold: number, filter?: { userId?: string; tenantId?: string }): Promise<string | null> {
     // ... query your vector DB ...
     return null;
   }
@@ -235,7 +239,7 @@ export class MyVectorAdapter implements VectorStoreAdapter {
    * Persist a prompt embedding and its LLM response.
    * Failures should be swallowed — caching is best-effort.
    */
-  async save(promptVector: number[], response: string): Promise<void> {
+  async save(promptVector: number[], response: string, metadata?: Record<string, unknown>): Promise<void> {
     // ... upsert into your vector DB ...
   }
 }

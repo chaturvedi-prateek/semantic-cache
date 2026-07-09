@@ -48,6 +48,14 @@ export interface VectorQueryMatch {
   metadata: VectorMetadata;
 }
 
+/**
+ * Optional metadata filter used to isolate cache lookups by caller identity.
+ */
+export interface VectorMetadataFilter {
+  userId?: string;
+  tenantId?: string;
+}
+
 // ---------------------------------------------------------------------------
 // VectorStoreAdapter
 // ---------------------------------------------------------------------------
@@ -83,7 +91,11 @@ export interface VectorStoreAdapter {
    * @returns Up to `topK` matches; an empty array when the store is empty
    *          or the backend is unreachable.
    */
-  query(vector: number[], topK: number): Promise<VectorQueryMatch[]>;
+  query(
+    vector: number[],
+    topK: number,
+    filter?: VectorMetadataFilter
+  ): Promise<VectorQueryMatch[]>;
 
   /**
    * Removes the entry stored under `id`. A no-op when no such entry exists.
@@ -103,7 +115,11 @@ export interface VectorStoreAdapter {
    *                    reasonable starting point for sentence-level deduplication.
    * @returns The cached LLM response string, or `null` on a miss.
    */
-  search(vector: number[], threshold: number): Promise<string | null>;
+  search(
+    vector: number[],
+    threshold: number,
+    filter?: VectorMetadataFilter
+  ): Promise<string | null>;
 
   /**
    * Persist a prompt embedding alongside the LLM response it produced.
@@ -111,5 +127,9 @@ export interface VectorStoreAdapter {
    * @param promptVector - The embedding that was used for the cache miss.
    * @param response     - The raw text returned by the LLM.
    */
-  save(promptVector: number[], response: string): Promise<void>;
+  save(
+    promptVector: number[],
+    response: string,
+    metadata?: VectorMetadata
+  ): Promise<void>;
 }

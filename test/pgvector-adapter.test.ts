@@ -108,6 +108,20 @@ describe("PgVectorAdapter", () => {
     expect(params[1]).toBe(1);
   });
 
+  it("adds metadata filters to query SQL", async () => {
+    mockQuery.mockResolvedValue({ rows: [] });
+
+    await makeAdapter().query([0.1], 1, {
+      userId: "user-1",
+      tenantId: "tenant-1",
+    });
+
+    const [sql, params] = mockQuery.mock.calls[0];
+    expect(sql).toContain("metadata ->> 'userId' = $2");
+    expect(sql).toContain("metadata ->> 'tenantId' = $3");
+    expect(params).toEqual(["[0.1]", "user-1", "tenant-1", 1]);
+  });
+
   // ── delete ────────────────────────────────────────────────────────────────
 
   it("deletes via DELETE WHERE id = $1", async () => {
@@ -157,7 +171,10 @@ describe("PgVectorAdapter", () => {
   it("save upserts the response under the metadata 'response' key", async () => {
     mockQuery.mockResolvedValue({ rows: [] });
 
-    await makeAdapter().save([0.1, 0.2], "the answer");
+    await makeAdapter().save([0.1, 0.2], "the answer", {
+      userId: "user-1",
+      tenantId: "tenant-1",
+    });
 
     const [sql, params] = mockQuery.mock.calls[0];
     expect(sql).toMatch(/INSERT INTO semantic_cache/i);
@@ -167,6 +184,8 @@ describe("PgVectorAdapter", () => {
     const metadata = JSON.parse(params[2]);
     expect(metadata.response).toBe("the answer");
     expect(typeof metadata.createdAt).toBe("string");
+    expect(metadata.userId).toBe("user-1");
+    expect(metadata.tenantId).toBe("tenant-1");
   });
 
   it("save never throws even when the pool rejects", async () => {

@@ -29,7 +29,10 @@ describe("RedisVectorAdapter", () => {
     mockRequest.mockResolvedValue({ result: "OK" });
 
     const promptVector = new Array(384).fill(0.1);
-    await adapter.save(promptVector, "cached_response");
+    await adapter.save(promptVector, "cached_response", {
+      userId: "user-1",
+      tenantId: "tenant-1",
+    });
 
     // We expect multiple raw command requests:
     // 1st request is FT.CREATE
@@ -43,9 +46,17 @@ describe("RedisVectorAdapter", () => {
     expect(hsetCall[1]).toContain("sc:");
     expect(hsetCall[2]).toBe("vector");
     expect(typeof hsetCall[3]).toBe("string"); // encoded binary string
-    expect(hsetCall[4]).toBe("response");
-    expect(hsetCall[5]).toBe("cached_response");
-    expect(hsetCall[6]).toBe("createdAt");
+    expect(hsetCall[4]).toBe("metadata");
+    expect(JSON.parse(hsetCall[5])).toMatchObject({
+      response: "cached_response",
+      userId: "user-1",
+      tenantId: "tenant-1",
+    });
+    expect(hsetCall[6]).toBe("response");
+    expect(hsetCall[7]).toBe("cached_response");
+    expect(hsetCall[8]).toBe("createdAt");
+    expect(hsetCall).toContain("userId");
+    expect(hsetCall).toContain("tenantId");
 
     // Let's verify the EXPIRE command
     const expireCall = mockRequest.mock.calls[2][0].command;
@@ -78,6 +89,24 @@ describe("RedisVectorAdapter", () => {
     expect(searchCall[0]).toBe("FT.SEARCH");
     expect(searchCall[1]).toBe("semantic_cache_idx");
     expect(searchCall[2]).toBe("*=>[KNN 1 @vector $vec AS __score]");
+  });
+
+  it("should scope search queries with metadata filters", async () => {
+    const adapter = new RedisVectorAdapter({ client: mockRedis });
+
+    mockRequest
+      .mockResolvedValueOnce({ result: "OK" })
+      .mockResolvedValueOnce({ result: [0] });
+
+    const promptVector = new Array(384).fill(0.1);
+    await adapter.search(promptVector, 0.92, {
+      userId: "user-1",
+      tenantId: "tenant-1",
+    });
+
+    const searchCall = mockRequest.mock.calls[1][0].command;
+    expect(searchCall[2]).toContain("@userId:{user-1}");
+    expect(searchCall[2]).toContain("@tenantId:{tenant-1}");
   });
 
   it("should return null on search score exceeding maxDistance (similarity lower than threshold)", async () => {

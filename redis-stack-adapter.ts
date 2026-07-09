@@ -70,6 +70,7 @@
  */
 
 import type {
+  VectorMetadataFilter,
   VectorStoreAdapter,
   VectorMetadata,
   VectorQueryMatch,
@@ -111,6 +112,26 @@ const INDEX_NAME = "semantic_cache_idx" as const;
 
 /** Metadata key under which `save()` stores the cached LLM response. */
 const RESPONSE_METADATA_KEY = "response" as const;
+const USER_ID_METADATA_KEY = "userId" as const;
+const TENANT_ID_METADATA_KEY = "tenantId" as const;
+
+function escapeRedisTagValue(value: string): string {
+  let escaped = "";
+  for (const char of value) {
+    escaped += /[A-Za-z0-9_-]/.test(char) ? char : `\\${char}`;
+  }
+  return escaped;
+}
+
+function buildRedisFilterPrefix(filter?: VectorMetadataFilter): string {
+  if (!filter) return "*";
+
+  const clauses = Object.entries(filter)
+    .filter((entry): entry is [string, string] => typeof entry[1] === "string")
+    .map(([key, value]) => `@${key}:{${escapeRedisTagValue(value)}}`);
+
+  return clauses.length > 0 ? clauses.join(" ") : "*";
+}
 
 // ---------------------------------------------------------------------------
 // Options
@@ -257,6 +278,8 @@ export class RedisStackVectorAdapter implements VectorStoreAdapter {
           "response", "TEXT", "NOSTEM",
           // ISO-8601 creation timestamp — indexed as TAG for equality filters.
           "createdAt", "TAG",
+          USER_ID_METADATA_KEY, "TAG",
+          TENANT_ID_METADATA_KEY, "TAG",
         ]);
       } catch (err: unknown) {
         // "Index already exists" (BUSYKEY) is expected on warm starts.
@@ -316,6 +339,14 @@ export class RedisStackVectorAdapter implements VectorStoreAdapter {
     if (typeof createdAt === "string") {
       args.push("createdAt", createdAt);
     }
+    const userId = (metadata as Record<string, unknown>)[USER_ID_METADATA_KEY];
+    if (typeof userId === "string") {
+      args.push(USER_ID_METADATA_KEY, userId);
+    }
+    const tenantId = (metadata as Record<string, unknown>)[TENANT_ID_METADATA_KEY];
+    if (typeof tenantId === "string") {
+      args.push(TENANT_ID_METADATA_KEY, tenantId);
+    }
 
     await this.client.sendCommand(args);
 
@@ -344,11 +375,16 @@ export class RedisStackVectorAdapter implements VectorStoreAdapter {
    * to cosine *similarity* via `score = 1 − distance`, clamped to [0, 1],
    * as required by the {@link VectorStoreAdapter} contract.
    */
-  async query(vector: number[], topK: number): Promise<VectorQueryMatch[]> {
+  async query(
+    vector: number[],
+    topK: number,
+    filter?: VectorMetadataFilter
+  ): Promise<VectorQueryMatch[]> {
     await this.ensureIndex();
 
     const k = Math.max(1, Math.floor(topK));
     const vecBytes = encodeVector(vector);
+    const filterPrefix = buildRedisFilterPrefix(filter);
 
     // FT.SEARCH RESP2 response format:
     //   [totalCount, key1, [field, value, ...], key2, [field, value, ...], ...]
@@ -357,7 +393,7 @@ export class RedisStackVectorAdapter implements VectorStoreAdapter {
       INDEX_NAME,
       // KNN filter: find the k nearest neighbours of $vec in @embedding field.
       // The $vec placeholder is resolved via the PARAMS clause below.
-      `*=>[KNN ${k} @embedding $vec AS __score]`,
+      `${filterPrefix}=>[KNN ${k} @embedding $vec AS __score]`,
       // PARAMS passes named binary parameters; nargs=2 means one name+value pair.
       "PARAMS", "2", "vec", vecBytes,
       // RETURN limits the fields included in each result to save bandwidth.
@@ -425,9 +461,13 @@ export class RedisStackVectorAdapter implements VectorStoreAdapter {
    * cosine similarity of `vector`. Returns `null` on a miss or any backend
    * failure so the middleware falls back to the live LLM call.
    */
-  async search(vector: number[], threshold: number): Promise<string | null> {
+  async search(
+    vector: number[],
+    threshold: number,
+    filter?: VectorMetadataFilter
+  ): Promise<string | null> {
     try {
-      const [best] = await this.query(vector, 1);
+      const [best] = await this.query(vector, 1, filter);
       if (!best || best.score < threshold) return null;
 
       const response = best.metadata[RESPONSE_METADATA_KEY];
@@ -445,10 +485,15 @@ export class RedisStackVectorAdapter implements VectorStoreAdapter {
    * Persists a prompt embedding alongside the LLM response it produced.
    * Failures are logged but never re-thrown — caching is best-effort.
    */
-  async save(promptVector: number[], response: string): Promise<void> {
+  async save(
+    promptVector: number[],
+    response: string,
+    metadata: VectorMetadata = {}
+  ): Promise<void> {
     try {
       await this.ensureIndex();
       await this.upsert(crypto.randomUUID(), promptVector, {
+        ...metadata,
         [RESPONSE_METADATA_KEY]: response,
         createdAt: new Date().toISOString(),
       });

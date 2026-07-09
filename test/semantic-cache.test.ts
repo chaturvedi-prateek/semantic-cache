@@ -1,51 +1,83 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { generateEmbedding, SemanticCacheMiddleware } from "../semantic-cache-middleware";
-import { withSemanticCache } from "../index";
-import type { VectorStoreAdapter } from "../semantic-cache-middleware";
-import type { LanguageModel } from "ai";
+
+vi.mock("@huggingface/transformers", () => ({
+  pipeline: vi.fn(async () => async (text: string) => {
+    const vector = new Float32Array(384);
+    for (let i = 0; i < vector.length; i++) {
+      const code = text.charCodeAt(i % text.length) || i + 1;
+      vector[i] = ((code % 97) + 1) / 100;
+    }
+
+    const magnitude = Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0));
+    for (let i = 0; i < vector.length; i++) {
+      vector[i] = vector[i] / magnitude;
+    }
+
+    return { data: vector, dims: [1, 384] };
+  }),
+}));
+
+import {
+  generateEmbedding,
+  SemanticCacheMiddleware,
+} from "../semantic-cache-middleware";
+import type {
+  VectorMetadata,
+  VectorMetadataFilter,
+  VectorStoreAdapter,
+} from "../semantic-cache-middleware";
 
 describe("generateEmbedding", () => {
-  it("should generate 384-dimensional embedding using all-MiniLM-L6-v2", async () => {
-    // This actually downloads the quantized MiniLM model on first run and embeds text
-    const text = "Hello world";
-    const embedding = await generateEmbedding(text);
-    
+  it("should generate a normalized 384-dimensional embedding", async () => {
+    const embedding = await generateEmbedding("Hello world");
+
     expect(embedding).toBeInstanceOf(Array);
-    expect(embedding.length).toBe(384); // all-MiniLM-L6-v2 size is 384
-    expect(embedding.every(n => typeof n === "number")).toBe(true);
-    // Verify it is normalized (magnitude close to 1)
+    expect(embedding.length).toBe(384);
+    expect(embedding.every((n) => typeof n === "number")).toBe(true);
+
     const magnitude = Math.sqrt(embedding.reduce((sum, val) => sum + val * val, 0));
     expect(magnitude).toBeCloseTo(1, 4);
-  }, 60000); // 1 minute timeout since downloading model may take time on first run
+  });
 });
 
 describe("SemanticCacheMiddleware", () => {
   let mockVectorStore: VectorStoreAdapter;
-  let savedData: { vector: number[]; response: string }[] = [];
+  let savedData: Array<{
+    vector: number[];
+    response: string;
+    metadata: VectorMetadata;
+  }>;
 
   beforeEach(() => {
     savedData = [];
     mockVectorStore = {
-      search: vi.fn(async (vector: number[], threshold: number) => {
-        // Mock simple exact match based on vector similarity or presence in savedData
-        if (savedData.length > 0) {
-          return savedData[0].response;
+      search: vi.fn(
+        async (
+          vector: number[],
+          _threshold: number,
+          filter?: VectorMetadataFilter
+        ) => {
+          const match = savedData.find(
+            (entry) =>
+              JSON.stringify(entry.vector) === JSON.stringify(vector) &&
+              entry.metadata.userId === filter?.userId &&
+              entry.metadata.tenantId === filter?.tenantId
+          );
+          return match?.response ?? null;
         }
-        return null;
-      }),
-      save: vi.fn(async (vector: number[], response: string) => {
-        savedData.push({ vector, response });
-      }),
-      upsert: vi.fn(async (id: string, vector: number[], metadata: any) => {
-        // Mock upsert implementation
-      }),
-      query: vi.fn(async (vector: number[], threshold: number) => {
-        // Mock query implementation
-        return [];
-      }),
-      delete: vi.fn(async (id: string) => {
-        // Mock delete implementation
-      }),
+      ),
+      save: vi.fn(
+        async (
+          vector: number[],
+          response: string,
+          metadata: VectorMetadata = {}
+        ) => {
+          savedData.push({ vector, response, metadata });
+        }
+      ),
+      upsert: vi.fn(async () => {}),
+      query: vi.fn(async () => []),
+      delete: vi.fn(async () => {}),
     };
   });
 
@@ -53,6 +85,8 @@ describe("SemanticCacheMiddleware", () => {
     const middleware = SemanticCacheMiddleware({
       vectorStore: mockVectorStore,
       similarityThreshold: 0.92,
+      userId: "user-1",
+      tenantId: "tenant-1",
       debug: true,
     });
 
@@ -63,24 +97,28 @@ describe("SemanticCacheMiddleware", () => {
       content: [{ type: "text", text: "This is a prompt response from the LLM." }],
     });
 
-    // 1. First request -> Cache Miss
     const params = {
-      prompt: [{ role: "user", content: [{ type: "text", text: "What is quantum entanglement?" }] }],
+      prompt: [
+        { role: "system", content: [{ type: "text", text: "Answer as a tutor." }] },
+        { role: "user", content: [{ type: "text", text: "What is quantum entanglement?" }] },
+      ],
       model: {} as any,
       mode: "regular" as const,
     };
 
-    // Transform params
     const transformedParams = await middleware.transformParams!({
       type: "generate",
       params: params as any,
       model: {} as any,
     });
 
-    expect(transformedParams).toBeDefined();
-    expect((transformedParams as any).__semanticCacheHit).toBeUndefined(); // No hit sentinel
+    expect((transformedParams as any).__semanticCacheHit).toBeUndefined();
+    expect(mockVectorStore.search).toHaveBeenCalledWith(
+      expect.any(Array),
+      0.92,
+      { userId: "user-1", tenantId: "tenant-1" }
+    );
 
-    // Wrap generate
     const result = await middleware.wrapGenerate!({
       doGenerate: mockDoGenerate,
       doStream: vi.fn(),
@@ -88,17 +126,20 @@ describe("SemanticCacheMiddleware", () => {
       model: {} as any,
     });
 
-    expect((result.content[0] as { type: "text"; text: string }).text).toBe("This is a prompt response from the LLM.");
+    expect((result.content[0] as { type: "text"; text: string }).text).toBe(
+      "This is a prompt response from the LLM."
+    );
     expect(mockDoGenerate).toHaveBeenCalledTimes(1);
 
-    // Give asynchronous save a moment to run
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(mockVectorStore.save).toHaveBeenCalledTimes(1);
-    expect(savedData.length).toBe(1);
-    expect(savedData[0].response).toBe("This is a prompt response from the LLM.");
+    expect(savedData).toHaveLength(1);
+    expect(savedData[0].metadata).toMatchObject({
+      userId: "user-1",
+      tenantId: "tenant-1",
+    });
 
-    // 2. Second request -> Cache Hit
     mockDoGenerate.mockClear();
 
     const transformedParamsHit = await middleware.transformParams!({
@@ -107,9 +148,9 @@ describe("SemanticCacheMiddleware", () => {
       model: {} as any,
     });
 
-    // It should have the cache hit sentinel (smuggled through providerMetadata)
-    expect((transformedParamsHit as any).providerMetadata?.__semanticCacheHit).toBeDefined();
-    expect((transformedParamsHit as any).providerMetadata?.__semanticCacheHit).toBe("This is a prompt response from the LLM.");
+    expect((transformedParamsHit as any).providerMetadata?.__semanticCacheHit).toBe(
+      "This is a prompt response from the LLM."
+    );
 
     const resultHit = await middleware.wrapGenerate!({
       doGenerate: mockDoGenerate,
@@ -118,7 +159,43 @@ describe("SemanticCacheMiddleware", () => {
       model: {} as any,
     });
 
-    expect((resultHit.content[0] as { type: "text"; text: string }).text).toBe("This is a prompt response from the LLM.");
-    expect(mockDoGenerate).not.toHaveBeenCalled(); // Short-circuited!
+    expect((resultHit.content[0] as { type: "text"; text: string }).text).toBe(
+      "This is a prompt response from the LLM."
+    );
+    expect(mockDoGenerate).not.toHaveBeenCalled();
+  });
+
+  it("uses conversation context when generating the cache vector", async () => {
+    const middleware = SemanticCacheMiddleware({
+      vectorStore: mockVectorStore,
+      similarityThreshold: 0.92,
+      userId: "user-1",
+      tenantId: "tenant-1",
+    });
+
+    const promptA = [
+      { role: "system", content: [{ type: "text", text: "You are a math tutor." }] },
+      { role: "user", content: [{ type: "text", text: "Summarize it." }] },
+    ];
+    const promptB = [
+      { role: "system", content: [{ type: "text", text: "You are a legal analyst." }] },
+      { role: "user", content: [{ type: "text", text: "Summarize it." }] },
+    ];
+
+    await middleware.transformParams!({
+      type: "generate",
+      params: { prompt: promptA } as any,
+      model: {} as any,
+    });
+    await middleware.transformParams!({
+      type: "generate",
+      params: { prompt: promptB } as any,
+      model: {} as any,
+    });
+
+    const firstVector = (mockVectorStore.search as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    const secondVector = (mockVectorStore.search as ReturnType<typeof vi.fn>).mock.calls[1][0];
+
+    expect(firstVector).not.toEqual(secondVector);
   });
 });
