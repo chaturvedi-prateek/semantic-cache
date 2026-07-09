@@ -357,16 +357,47 @@ export interface SemanticCacheMiddlewareOptions {
 }
 
 // ---------------------------------------------------------------------------
-// 7. Internal sentinel key
+// 7. Internal provider-metadata payload
 // ---------------------------------------------------------------------------
 
-/**
- * The key used to smuggle a cache-hit value through `providerMetadata`
- * from `transformParams` into `wrapGenerate`.
- * Prefixed with `__` to minimise collision risk with real provider keys.
- */
-const CACHE_HIT_SENTINEL = "__semanticCacheHit" as const;
-const PROMPT_VECTOR_SENTINEL = "__semanticCachePromptVector" as const;
+const SEMANTIC_CACHE_METADATA_KEY = "__semanticCache" as const;
+
+type SemanticCacheRequestMetadata = {
+  cacheHitText?: string;
+  promptVector?: number[];
+};
+
+function getSemanticCacheRequestMetadata(
+  params: LanguageModelCallOptions
+): SemanticCacheRequestMetadata {
+  const providerMetadata = (params as any).providerMetadata ?? {};
+  const value = providerMetadata[SEMANTIC_CACHE_METADATA_KEY];
+
+  if (!value || typeof value !== "object") {
+    return {};
+  }
+
+  return value as SemanticCacheRequestMetadata;
+}
+
+function withSemanticCacheRequestMetadata(
+  params: LanguageModelCallOptions,
+  metadataPatch: SemanticCacheRequestMetadata
+): LanguageModelCallOptions {
+  const providerMetadata = (params as any).providerMetadata ?? {};
+  const existingMetadata = getSemanticCacheRequestMetadata(params);
+
+  return {
+    ...params,
+    providerMetadata: {
+      ...providerMetadata,
+      [SEMANTIC_CACHE_METADATA_KEY]: {
+        ...existingMetadata,
+        ...metadataPatch,
+      },
+    },
+  } as LanguageModelCallOptions;
+}
 
 // ---------------------------------------------------------------------------
 // 8. SemanticCacheMiddleware factory
@@ -451,28 +482,18 @@ export function SemanticCacheMiddleware(
       // ── Cache HIT ─────────────────────────────────────────────────
       log(`Cache HIT  — "${promptText.slice(0, 72)}…"`);
 
-      // Attach the cached value to providerMetadata.  wrapGenerate reads
-      // this sentinel and returns the synthetic result without calling doGenerate.
-      return {
-        ...params,
-        providerMetadata: {
-          ...((params as any).providerMetadata ?? {}),
-          [CACHE_HIT_SENTINEL]: cachedResponse,
-        },
-      } as any;
+      // Attach per-request cache-hit state on params so wrapGenerate/wrapStream
+      // can short-circuit without relying on shared process-scoped state.
+      return withSemanticCacheRequestMetadata(params, {
+        cacheHitText: cachedResponse,
+      }) as any;
     }
 
     // ── Cache MISS ────────────────────────────────────────────────────
     log(`Cache MISS — "${promptText.slice(0, 72)}…"`);
-    // Thread the vector through providerMetadata so wrapGenerate can save it
-    // without relying on any process-scoped shared state.
-    return {
-      ...params,
-      providerMetadata: {
-        ...((params as any).providerMetadata ?? {}),
-        [PROMPT_VECTOR_SENTINEL]: promptVector,
-      },
-    } as any;
+    // Thread the vector through params-scoped metadata so wrapGenerate/wrapStream
+    // can save it without relying on any process-scoped shared state.
+    return withSemanticCacheRequestMetadata(params, { promptVector }) as any;
   };
 
   // =========================================================================
@@ -487,14 +508,14 @@ export function SemanticCacheMiddleware(
     params,
   }) => {
     // ── Cache HIT path ────────────────────────────────────────────────
-    const cacheHitValue = ((params as any).providerMetadata ?? {})[
-      CACHE_HIT_SENTINEL
-    ];
+    const { cacheHitText, promptVector } = getSemanticCacheRequestMetadata(
+      params as LanguageModelCallOptions
+    );
 
-    if (typeof cacheHitValue === "string") {
+    if (typeof cacheHitText === "string") {
       log("Short-circuiting LLM call — serving cached response.");
       // Return the fabricated result; the real model is never invoked.
-      return buildCachedGenerateResult(cacheHitValue) as any;
+      return buildCachedGenerateResult(cacheHitText) as any;
     }
 
     // ── Cache MISS path ───────────────────────────────────────────────
@@ -503,10 +524,6 @@ export function SemanticCacheMiddleware(
 
     // Persist asynchronously — we must NOT block the response path.
     const promptText = extractPromptText(params.prompt);
-    const promptVector = ((params as any).providerMetadata ?? {})[
-      PROMPT_VECTOR_SENTINEL
-    ] as number[] | undefined;
-
     // SDK v4 uses `text` directly; fall back to content array for compatibility.
     const responseText: string =
       (result as any).text ??
@@ -543,22 +560,18 @@ export function SemanticCacheMiddleware(
     params,
   }) => {
     // ── Cache HIT path ────────────────────────────────────────────────
-    const cacheHitValue = ((params as any).providerMetadata ?? {})[
-      CACHE_HIT_SENTINEL
-    ];
+    const { cacheHitText, promptVector } = getSemanticCacheRequestMetadata(
+      params as LanguageModelCallOptions
+    );
 
-    if (typeof cacheHitValue === "string") {
+    if (typeof cacheHitText === "string") {
       log("Short-circuiting stream call — serving cached response.");
-      return buildCachedStreamResult(cacheHitValue) as any;
+      return buildCachedStreamResult(cacheHitText) as any;
     }
 
     // ── Cache MISS path ───────────────────────────────────────────────
     const streamResult = await doStream();
     const promptText = extractPromptText(params.prompt);
-    const promptVector = ((params as any).providerMetadata ?? {})[
-      PROMPT_VECTOR_SENTINEL
-    ] as number[] | undefined;
-
     let bufferedText = "";
     let saveScheduled = false;
 
