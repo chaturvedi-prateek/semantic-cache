@@ -75,6 +75,7 @@ import type {
   VectorMetadata,
   VectorQueryMatch,
 } from "./vector-store-adapter";
+import { buildRedisFilterPrefix } from "./redis-metadata-filter";
 
 // ---------------------------------------------------------------------------
 // RedisClientLike — minimal interface compatible with node-redis v4
@@ -114,24 +115,6 @@ const INDEX_NAME = "semantic_cache_idx" as const;
 const RESPONSE_METADATA_KEY = "response" as const;
 const USER_ID_METADATA_KEY = "userId" as const;
 const TENANT_ID_METADATA_KEY = "tenantId" as const;
-
-function escapeRedisTagValue(value: string): string {
-  let escaped = "";
-  for (const char of value) {
-    escaped += /[A-Za-z0-9_-]/.test(char) ? char : `\\${char}`;
-  }
-  return escaped;
-}
-
-function buildRedisFilterPrefix(filter?: VectorMetadataFilter): string {
-  if (!filter) return "*";
-
-  const clauses = Object.entries(filter)
-    .filter((entry): entry is [string, string] => typeof entry[1] === "string")
-    .map(([key, value]) => `@${key}:{${escapeRedisTagValue(value)}}`);
-
-  return clauses.length > 0 ? clauses.join(" ") : "*";
-}
 
 // ---------------------------------------------------------------------------
 // Options
