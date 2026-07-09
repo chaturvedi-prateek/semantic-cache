@@ -20,6 +20,10 @@
     "dist/upstash-vector-adapter.d.ts",
     "dist/pinecone-vector-adapter.js",
     "dist/pinecone-vector-adapter.d.ts",
+    "dist/pgvector-adapter.js",
+    "dist/pgvector-adapter.d.ts",
+    "dist/redis-stack-adapter.js",
+    "dist/redis-stack-adapter.d.ts",
     "dist/vector-store-adapter.js",
     "dist/vector-store-adapter.d.ts",
     "dist/next-cache.js",
@@ -50,6 +54,14 @@
     "./pinecone-vector-adapter": {
       "types": "./dist/pinecone-vector-adapter.d.ts",
       "default": "./dist/pinecone-vector-adapter.js"
+    },
+    "./pgvector-adapter": {
+      "types": "./dist/pgvector-adapter.d.ts",
+      "default": "./dist/pgvector-adapter.js"
+    },
+    "./redis-stack-adapter": {
+      "types": "./dist/redis-stack-adapter.d.ts",
+      "default": "./dist/redis-stack-adapter.js"
     },
     "./vector-store-adapter": {
       "types": "./dist/vector-store-adapter.d.ts",
